@@ -2,32 +2,30 @@ package lockstitch
 
 import (
 	"bytes"
-	"slices"
 	"testing"
 )
 
 func FuzzStream(f *testing.F) {
-	encrypt := func(key []byte, nonce []byte, message []byte) {
+	encrypt := func(key []byte, nonce []byte, message []byte) []byte {
 		protocol := NewProtocol("stream")
 		protocol.Mix("key", key)
 		protocol.Mix("nonce", nonce)
-		protocol.Encrypt("message", message)
+		return protocol.Encrypt("message", message[:0], message)
 	}
 
-	decrypt := func(key []byte, nonce []byte, message []byte) {
+	decrypt := func(key []byte, nonce []byte, message []byte) []byte {
 		protocol := NewProtocol("stream")
 		protocol.Mix("key", key)
 		protocol.Mix("nonce", nonce)
-		protocol.Decrypt("message", message)
+		return protocol.Decrypt("message", message[:0], message)
 	}
 
 	f.Add([]byte("yellow submarine"), []byte("12345678"), []byte("hello world"))
 	f.Fuzz(func(t *testing.T, key []byte, nonce []byte, message []byte) {
-		expected := slices.Clone(message)
-		encrypt(key, nonce, message)
-		decrypt(key, nonce, message)
-		if !bytes.Equal(expected, message) {
-			t.Errorf("failed decryption. expected %v, got %v", expected, message)
+		ciphertext := encrypt(key, nonce, message)
+		actual := decrypt(key, nonce, ciphertext)
+		if !bytes.Equal(message, actual) {
+			t.Errorf("failed decryption. expected %v, got %v", message, actual)
 		}
 	})
 }
@@ -37,17 +35,14 @@ func FuzzAEAD(f *testing.F) {
 		protocol := NewProtocol("aead")
 		protocol.Mix("key", key)
 		protocol.Mix("nonce", nonce)
-		out := make([]byte, len(message)+TAG_LEN)
-		copy(out, message)
-		protocol.Seal("message", out)
-		return out
+		return protocol.Seal("message", nil, message)
 	}
 
 	decrypt := func(key []byte, nonce []byte, message []byte) ([]byte, error) {
 		protocol := NewProtocol("aead")
 		protocol.Mix("key", key)
 		protocol.Mix("nonce", nonce)
-		return protocol.Open("message", message)
+		return protocol.Open("message", nil, message)
 	}
 
 	f.Add([]byte("yellow submarine"), []byte("12345678"), []byte("hello world"))

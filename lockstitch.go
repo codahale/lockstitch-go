@@ -132,10 +132,13 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	//
 	//     k || n = prk
 	//     prf = AES-CTR(k, n, [0x00; N])
-	dst = append(dst, make([]byte, n)...)
+	ret, out := sliceForAppend(dst, n)
+	for i := range out {
+		out[i] = 0
+	}
 	block, _ := aes.NewCipher(prk[:16])
 	c := cipher.NewCTR(block, prk[16:])
-	c.XORKeyStream(dst, dst)
+	c.XORKeyStream(out, out)
 
 	// Extract a new state value from the protocol's old state and the PRK:
 	//
@@ -147,12 +150,12 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	_, _ = h.Write(prk)
 	p.state = h.Sum(p.state[:0])
 
-	return dst
+	return ret
 }
 
 // Encrypt encrypts the given slice in place using the protocol's current state as the key, then
 // ratchets the protocol's state using the label and input.
-func (p *Protocol) Encrypt(label string, in_out []byte) {
+func (p *Protocol) Encrypt(label string, dst, src []byte) []byte {
 	// Extract a PRK from the protocol's state, the operation code, the label, and the output
 	// length, using an unambiguous encoding to prevent collisions:
 	//     dek || dak = HMAC(state, 0x03 || left_encode(|label|) || label || left_encode(|plaintext|))
@@ -160,7 +163,7 @@ func (p *Protocol) Encrypt(label string, in_out []byte) {
 	_, _ = h.Write([]byte{CRYPT_OP})
 	leftEncode(h, uint64(len(label))*8)
 	_, _ = h.Write([]byte(label))
-	leftEncode(h, uint64(len(in_out))*8)
+	leftEncode(h, uint64(len(src))*8)
 	prk := h.Sum(nil)
 	dek, dak := prk[:16], prk[16:]
 
@@ -169,13 +172,14 @@ func (p *Protocol) Encrypt(label string, in_out []byte) {
 	//     ciphertext = AES-CTR(dek, [0x00; 16], plaintext)
 	block, _ := aes.NewCipher(dek)
 	c := cipher.NewCTR(block, make([]byte, 16))
-	c.XORKeyStream(in_out, in_out)
+	ret, out := sliceForAppend(dst, len(src))
+	c.XORKeyStream(out, src)
 
 	// Use the DAK to extract a PRK from the ciphertext with HMAC-SHA-256:
 	//
 	//     prk = HMAC(dak, ciphertext)
 	h2 := hmac.New(sha256.New, dak)
-	_, _ = h2.Write(in_out)
+	_, _ = h2.Write(out)
 	prk = h2.Sum(prk[:0])
 
 	// Extract a new state value from the protocol's old state and the PRK:
@@ -187,19 +191,21 @@ func (p *Protocol) Encrypt(label string, in_out []byte) {
 	h.Reset()
 	_, _ = h.Write(prk)
 	p.state = h.Sum(p.state[:0])
+
+	return ret
 }
 
 // Decrypt decrypts the given slice in place using the protocol's current state as the key, then
 // ratchets the protocol's state using the label and input.
-func (p *Protocol) Decrypt(label string, in_out []byte) {
+func (p *Protocol) Decrypt(label string, dst, src []byte) []byte {
 	// Extract a PRK from the protocol's state, the operation code, the label, and the output
 	// length, using an unambiguous encoding to prevent collisions:
-	//     dek || dak = HMAC(state, 0x03 || left_encode(|label|) || label || left_encode(|out|))
+	//     dek || dak = HMAC(state, 0x03 || left_encode(|label|) || label || left_encode(|ciphertext|))
 	h := hmac.New(sha256.New, p.state[:])
 	_, _ = h.Write([]byte{CRYPT_OP})
 	leftEncode(h, uint64(len(label))*8)
 	_, _ = h.Write([]byte(label))
-	leftEncode(h, uint64(len(in_out))*8)
+	leftEncode(h, uint64(len(src))*8)
 	prk := h.Sum(nil)
 	dek, dak := prk[:16], prk[16:]
 
@@ -207,7 +213,7 @@ func (p *Protocol) Decrypt(label string, in_out []byte) {
 	//
 	//     prk = HMAC(dak, ciphertext)
 	h2 := hmac.New(sha256.New, dak)
-	_, _ = h2.Write(in_out)
+	_, _ = h2.Write(src)
 	prk = h2.Sum(nil)
 
 	// Extract a new state value from the protocol's old state and the PRK:
@@ -225,14 +231,16 @@ func (p *Protocol) Decrypt(label string, in_out []byte) {
 	//     plaintext = AES-CTR(dek, [0x00; 16], ciphertext)
 	block, _ := aes.NewCipher(dek)
 	c := cipher.NewCTR(block, make([]byte, 16))
-	c.XORKeyStream(in_out, in_out)
+	ret, out := sliceForAppend(dst, len(src))
+	c.XORKeyStream(out, src)
+	return ret
 }
 
 // Encrypts the given slice in place using the protocol's current state as the key, appending an
 // authentication tag of TAG_LEN bytes, then ratchets the protocol's state using the label and
 // input.
-func (p *Protocol) Seal(label string, in_out []byte) {
-	in_out, tag := in_out[:len(in_out)-TAG_LEN], in_out[len(in_out)-TAG_LEN:]
+func (p *Protocol) Seal(label string, dst, src []byte) []byte {
+	ret, out := sliceForAppend(dst, len(src)+TAG_LEN)
 
 	// Extract a PRK from the protocol's state, the operation code, the label, and the output
 	// length, using an unambiguous encoding to prevent collisions:
@@ -241,7 +249,7 @@ func (p *Protocol) Seal(label string, in_out []byte) {
 	_, _ = h.Write([]byte{AUTH_CRYPT_OP})
 	leftEncode(h, uint64(len(label))*8)
 	_, _ = h.Write([]byte(label))
-	leftEncode(h, uint64(len(in_out))*8)
+	leftEncode(h, uint64(len(src))*8)
 	prk := h.Sum(nil)
 	dek, dak := prk[:16], prk[16:]
 
@@ -249,17 +257,17 @@ func (p *Protocol) Seal(label string, in_out []byte) {
 	//
 	//     prk_0 || prk_1 = HMAC(dak, plaintext)
 	h2 := hmac.New(sha256.New, dak)
-	_, _ = h2.Write(in_out)
+	_, _ = h2.Write(src)
 	prk = h2.Sum(nil)
-	copy(tag, prk[:TAG_LEN])
 
 	// Use the DEK and tag to encrypt the plaintext with AES-128, using the first 16 bytes of
 	// the PRK as the nonce:
 	//
 	//     ciphertext = AES-CTR(dek, prk_0, plaintext)
 	block, _ := aes.NewCipher(dek)
-	c := cipher.NewCTR(block, tag)
-	c.XORKeyStream(in_out, in_out)
+	c := cipher.NewCTR(block, prk[:TAG_LEN])
+	c.XORKeyStream(out, src)
+	copy(out[len(out)-TAG_LEN:], prk[:TAG_LEN])
 
 	// Use the PRK to extract a new protocol state:
 	//
@@ -270,6 +278,8 @@ func (p *Protocol) Seal(label string, in_out []byte) {
 	h.Reset()
 	_, _ = h.Write(prk)
 	p.state = h.Sum(p.state[:0])
+
+	return ret
 }
 
 // Open decrypts the given slice in place using the protocol's current state as the key, verifying
@@ -277,17 +287,18 @@ func (p *Protocol) Seal(label string, in_out []byte) {
 // label and input.
 //
 // Returns the plaintext slice of in_out if the input was authenticated, an error otherwise.
-func (p *Protocol) Open(label string, in_out []byte) ([]byte, error) {
-	in_out, tag := in_out[:len(in_out)-TAG_LEN], in_out[len(in_out)-TAG_LEN:]
+func (p *Protocol) Open(label string, dst, src []byte) ([]byte, error) {
+	ret, out := sliceForAppend(dst, len(src)-TAG_LEN)
+	src, tag := src[:len(src)-TAG_LEN], src[len(src)-TAG_LEN:]
 
 	// Extract a PRK from the protocol's state, the operation code, the label, and the output
 	// length, using an unambiguous encoding to prevent collisions:
-	//     dek || dak = HMAC(state, 0x04 || left_encode(|label|) || label || left_encode(|ciphertext|))
+	//     dek || dak = HMAC(state, 0x04 || left_encode(|label|) || label || left_encode(|plaintext|))
 	h := hmac.New(sha256.New, p.state[:])
 	_, _ = h.Write([]byte{AUTH_CRYPT_OP})
 	leftEncode(h, uint64(len(label))*8)
 	_, _ = h.Write([]byte(label))
-	leftEncode(h, uint64(len(in_out))*8)
+	leftEncode(h, uint64(len(src))*8)
 	prk := h.Sum(nil)
 	dek, dak := prk[:16], prk[16:]
 
@@ -296,13 +307,13 @@ func (p *Protocol) Open(label string, in_out []byte) ([]byte, error) {
 	//     plaintext = AES-CTR(dek, tag, ciphertext)
 	block, _ := aes.NewCipher(dek)
 	c := cipher.NewCTR(block, tag)
-	c.XORKeyStream(in_out, in_out)
+	c.XORKeyStream(out, src)
 
 	// Use the DAK to extract a PRK from the plaintext with HMAC-SHA-256:
 	//
 	//     prk_0 || prk_1 = HMAC(dak, plaintext)
 	h2 := hmac.New(sha256.New, dak)
-	_, _ = h2.Write(in_out)
+	_, _ = h2.Write(out)
 	prk = h2.Sum(prk[:0])
 
 	// Use the PRK to extract a new protocol state:
@@ -319,12 +330,12 @@ func (p *Protocol) Open(label string, in_out []byte) ([]byte, error) {
 	//
 	//     tag = prk_0
 	if hmac.Equal(tag, prk[:TAG_LEN]) {
-		return in_out, nil
+		return ret, nil
 	}
 
-	// If unauthenticated, zero out the input buffer to prevent accidental disclosure.
-	for i := range in_out {
-		in_out[i] = 0
+	// If unauthenticated, zero out the output buffer to prevent accidental disclosure.
+	for i := range out {
+		out[i] = 0
 	}
 	return nil, ErrInvalidCiphertext
 }
@@ -336,10 +347,28 @@ const (
 	AUTH_CRYPT_OP = 0x04
 )
 
+// leftEncode encodes an integer value using NIST SP 800-185's left_encode.
+//
+// https://www.nist.gov/publications/sha-3-derived-functions-cshake-kmac-tuplehash-and-parallelhash
 func leftEncode(w io.Writer, value uint64) {
 	buf := [9]byte{}
 	binary.BigEndian.PutUint64(buf[1:], value)
 	n := max(len(buf)-1-(bits.LeadingZeros64(value)/8), 1)
 	buf[len(buf)-n-1] = byte(n)
 	_, _ = w.Write(buf[len(buf)-n-1:])
+}
+
+// sliceForAppend takes a slice and a requested number of bytes. It returns a
+// slice with the contents of the given slice followed by that many bytes and a
+// second slice that aliases into it and contains only the extra bytes. If the
+// original slice has sufficient capacity then no allocation is performed.
+func sliceForAppend(in []byte, n int) (head, tail []byte) {
+	if total := len(in) + n; cap(in) >= total {
+		head = in[:total]
+	} else {
+		head = make([]byte, total)
+		copy(head, in)
+	}
+	tail = head[len(in):]
+	return
 }

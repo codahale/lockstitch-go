@@ -65,11 +65,11 @@ func BenchmarkPRF(b *testing.B) {
 func BenchmarkStream(b *testing.B) {
 	key := make([]byte, 32)
 	nonce := make([]byte, 16)
-	stream := func(message []byte) {
+	stream := func(message []byte) []byte {
 		protocol := NewProtocol("stream")
 		protocol.Mix("key", key)
 		protocol.Mix("nonce", nonce)
-		protocol.Encrypt("message", message)
+		return protocol.Encrypt("message", message[:0], message)
 	}
 
 	for _, length := range lengths {
@@ -87,12 +87,12 @@ func BenchmarkAEAD(b *testing.B) {
 	key := make([]byte, 32)
 	nonce := make([]byte, 16)
 	ad := make([]byte, 32)
-	aead := func(message []byte) {
+	aead := func(message []byte) []byte {
 		protocol := NewProtocol("aead")
 		protocol.Mix("key", key)
 		protocol.Mix("nonce", nonce)
 		protocol.Mix("ad", ad)
-		protocol.Seal("message", message)
+		return protocol.Seal("message", message[:0], message)
 	}
 
 	for _, length := range lengths {

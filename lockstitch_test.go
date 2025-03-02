@@ -16,15 +16,13 @@ func TestKnownAnswers(t *testing.T) {
 	}
 
 	plaintext := []byte("this is an example")
-	protocol.Encrypt("fourth", plaintext)
-	if expected, actual := "cbc0743dbcd23d85d16221fc94ae677d29d9", hex.EncodeToString(plaintext); expected != actual {
+	ciphertext := protocol.Encrypt("fourth", nil, plaintext)
+	if expected, actual := "cbc0743dbcd23d85d16221fc94ae677d29d9", hex.EncodeToString(ciphertext); expected != actual {
 		t.Errorf("Encrypt output mismatch, expected %v, got %v", expected, actual)
 	}
 
-	plaintext = make([]byte, len(plaintext)+TAG_LEN)
-	copy(plaintext, []byte("this is an example"))
-	protocol.Seal("fifth", plaintext)
-	if expected, actual := "94a54f24929bc03442d3f9945a34777dfff76ed2bb4e0e9b3e15608fefde7ef9fc51", hex.EncodeToString(plaintext); expected != actual {
+	ciphertext = protocol.Seal("fifth", nil, []byte("this is an example"))
+	if expected, actual := "94a54f24929bc03442d3f9945a34777dfff76ed2bb4e0e9b3e15608fefde7ef9fc51", hex.EncodeToString(ciphertext); expected != actual {
 		t.Errorf("Seal output mismatch, expected %v, got %v", expected, actual)
 	}
 
