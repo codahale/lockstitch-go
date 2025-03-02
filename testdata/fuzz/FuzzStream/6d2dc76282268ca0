@@ -1,0 +1,4 @@
+go test fuzz v1
+[]byte("yellow submarine")
+[]byte("12345678")
+[]byte("yellow subm")

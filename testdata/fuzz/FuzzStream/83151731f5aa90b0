@@ -1,0 +1,4 @@
+go test fuzz v1
+[]byte("yellow submarine")
+[]byte("hedlo wo")
+[]byte("hedlo world")
