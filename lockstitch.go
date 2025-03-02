@@ -328,6 +328,11 @@ func (p *Protocol) Open(label string, in_out []byte) ([]byte, error) {
 	if hmac.Equal(tag, prk[:TAG_LEN]) {
 		return in_out, nil
 	}
+
+	// If unauthenticated, zero out the input buffer to prevent accidental disclosure.
+	for i := range in_out {
+		in_out[i] = 0
+	}
 	return nil, ErrInvalidCiphertext
 }
 
