@@ -81,9 +81,9 @@ func TestMixAndMixWriter(t *testing.T) {
 
 	b1 := new(bytes.Buffer)
 	w1 := b.MixWriter("one", b1)
-	w1.Write([]byte("1"))
-	w1.Write([]byte("1"))
-	w1.Write([]byte("1"))
+	_, _ = w1.Write([]byte("1"))
+	_, _ = w1.Write([]byte("1"))
+	_, _ = w1.Write([]byte("1"))
 	if err := w1.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -92,9 +92,9 @@ func TestMixAndMixWriter(t *testing.T) {
 	}
 	b2 := new(bytes.Buffer)
 	w2 := b.MixWriter("two", b2)
-	w2.Write([]byte("2"))
-	w2.Write([]byte("2"))
-	w2.Write([]byte("2"))
+	_, _ = w2.Write([]byte("2"))
+	_, _ = w2.Write([]byte("2"))
+	_, _ = w2.Write([]byte("2"))
 	if err := w2.Close(); err != nil {
 		t.Fatal(err)
 	}
