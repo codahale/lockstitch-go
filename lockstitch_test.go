@@ -11,7 +11,7 @@ func TestKnownAnswers(t *testing.T) {
 	protocol.Mix("first", []byte("one"))
 	protocol.Mix("second", []byte("two"))
 
-	if expected, actual := "f30a3c4582cf74b5", hex.EncodeToString(protocol.DeriveSlice("third", 8)); expected != actual {
+	if expected, actual := "f30a3c4582cf74b5", hex.EncodeToString(protocol.Derive("third", nil, 8)); expected != actual {
 		t.Errorf("Derive output mismatch, expected %v, got %v", expected, actual)
 	}
 
@@ -28,7 +28,7 @@ func TestKnownAnswers(t *testing.T) {
 		t.Errorf("Seal output mismatch, expected %v, got %v", expected, actual)
 	}
 
-	if expected, actual := "61e6981b6849c5e6", hex.EncodeToString(protocol.DeriveSlice("sixth", 8)); expected != actual {
+	if expected, actual := "61e6981b6849c5e6", hex.EncodeToString(protocol.Derive("sixth", nil, 8)); expected != actual {
 		t.Errorf("DeriveSlice output mismatch, expected %v, got %v", expected, actual)
 	}
 }
@@ -75,7 +75,7 @@ func TestMixAndMixWriter(t *testing.T) {
 	a := NewProtocol("test")
 	a.Mix("one", []byte("111"))
 	a.Mix("two", []byte("222"))
-	ad := a.DeriveSlice("three", 8)
+	ad := a.Derive("three", nil, 8)
 
 	b := NewProtocol("test")
 
@@ -102,7 +102,7 @@ func TestMixAndMixWriter(t *testing.T) {
 		t.Errorf("expected write of %v but was %v", expected, actual)
 	}
 
-	bd := b.DeriveSlice("three", 8)
+	bd := b.Derive("three", nil, 8)
 
 	if !bytes.Equal(ad, bd) {
 		t.Errorf("expected %v but was %v", ad, bd)

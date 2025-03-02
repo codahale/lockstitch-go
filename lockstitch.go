@@ -116,7 +116,7 @@ func (w *mixWriter) Close() error {
 
 // Derive generates pseudorandom output from the Protocol's current state, the label, and the output
 // length, then ratchets the Protocol's state with the label and output length.
-func (p *Protocol) Derive(label string, out []byte) {
+func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	// Extract a PRK from the protocol's state, the operation code, the label, and the output
 	// length, using an unambiguous encoding to prevent collisions:
 	//
@@ -125,19 +125,17 @@ func (p *Protocol) Derive(label string, out []byte) {
 	_, _ = h.Write([]byte{DERIVE_OP})
 	leftEncode(h, uint64(len(label))*8)
 	_, _ = h.Write([]byte(label))
-	leftEncode(h, uint64(len(out))*8)
+	leftEncode(h, uint64(n)*8)
 	prk := h.Sum(nil)
 
 	// Use the PRK to encrypt all zeroes with AES:
 	//
 	//     k || n = prk
 	//     prf = AES-CTR(k, n, [0x00; N])
-	for i := range out {
-		out[i] = 0
-	}
+	dst = append(dst, make([]byte, n)...)
 	block, _ := aes.NewCipher(prk[:16])
 	c := cipher.NewCTR(block, prk[16:])
-	c.XORKeyStream(out, out)
+	c.XORKeyStream(dst, dst)
 
 	// Extract a new state value from the protocol's old state and the PRK:
 	//
@@ -148,13 +146,8 @@ func (p *Protocol) Derive(label string, out []byte) {
 	h.Reset()
 	_, _ = h.Write(prk)
 	p.state = h.Sum(p.state[:0])
-}
 
-// DeriveSlice performs a Derive operation and returns an n-byte slice of pseudorandom data.
-func (p *Protocol) DeriveSlice(label string, n int) []byte {
-	out := make([]byte, n)
-	p.Derive(label, out)
-	return out
+	return dst
 }
 
 // Encrypt encrypts the given slice in place using the protocol's current state as the key, then

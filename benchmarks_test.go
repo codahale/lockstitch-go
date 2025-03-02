@@ -9,7 +9,7 @@ func BenchmarkHash(b *testing.B) {
 	hash := func(message []byte) []byte {
 		protocol := NewProtocol("hash")
 		protocol.Mix("message", message)
-		return protocol.DeriveSlice("digest", 32)
+		return protocol.Derive("digest", nil, 32)
 	}
 
 	for _, length := range lengths {
@@ -29,7 +29,7 @@ func BenchmarkHashWriter(b *testing.B) {
 		w := protocol.MixWriter("message", io.Discard)
 		_, _ = w.Write(message)
 		_ = w.Close()
-		return protocol.DeriveSlice("digest", 32)
+		return protocol.Derive("digest", nil, 32)
 	}
 
 	for _, length := range lengths {
@@ -45,10 +45,10 @@ func BenchmarkHashWriter(b *testing.B) {
 
 func BenchmarkPRF(b *testing.B) {
 	key := make([]byte, 32)
-	prf := func(output []byte) {
+	prf := func(output []byte) []byte {
 		protocol := NewProtocol("prf")
 		protocol.Mix("key", key)
-		protocol.Derive("output", output)
+		return protocol.Derive("output", output[:0], len(output))
 	}
 
 	for _, length := range lengths {
