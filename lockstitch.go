@@ -125,7 +125,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	_, _ = h.Write([]byte{DeriveOp})
 	leftEncode(h, uint64(len(label))*8)
 	_, _ = h.Write([]byte(label))
-	leftEncode(h, uint64(n)*8)
+	leftEncode(h, uint64(n)*8) //nolint:gosec
 	opk := h.Sum(nil)
 
 	// Use the PRK to encrypt all zeroes with AES:

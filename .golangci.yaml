@@ -1,16 +1,44 @@
+run:
+  tests: true
+
 linters:
   enable:
-    - cyclop
-    - decorder
-    - err113
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - contextcheck
+    - durationcheck
     - errcheck
     - errname
-    - gci
-    - goconst
+    - errorlint
     - gocritic
+    - godot
+    - gofmt
+    - gofumpt
+    - goimports
+    - gosec
     - gosimple
     - govet
     - ineffassign
+    - misspell
+    - nakedret
+    - nilerr
+    - nilnil
+    - nolintlint
+    - prealloc
+    - predeclared
+    - reassign
+    - revive
     - staticcheck
     - stylecheck
+    - tagliatelle
+    - testableexamples
+    - thelper
+    - tparallel
+    - unconvert
+    - unparam
     - unused
+    - usestdlibvars
+    - usetesting
+    - wastedassign

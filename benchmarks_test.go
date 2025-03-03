@@ -106,10 +106,7 @@ func BenchmarkAEAD(b *testing.B) {
 	}
 }
 
-var lengths []struct {
-	name string
-	n    int
-} = []struct {
+var lengths = []struct {
 	name string
 	n    int
 }{
