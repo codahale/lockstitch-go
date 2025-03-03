@@ -1,7 +1,13 @@
 linters:
   enable:
+    - cyclop
+    - decorder
     - err113
     - errcheck
+    - errname
+    - gci
+    - goconst
+    - gocritic
     - gosimple
     - govet
     - ineffassign
