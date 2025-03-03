@@ -97,7 +97,7 @@ func BenchmarkAEAD(b *testing.B) {
 
 	for _, length := range lengths {
 		b.Run(length.name, func(b *testing.B) {
-			output := make([]byte, length.n+TAG_LEN)
+			output := make([]byte, length.n+TagLen)
 			b.SetBytes(int64(len(output)))
 			for b.Loop() {
 				aead(output)

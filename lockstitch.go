@@ -19,8 +19,8 @@ import (
 	"math/bits"
 )
 
-// TAG_LEN is the number of bytes added to the plaintext by the Seal operation.
-const TAG_LEN = 16
+// TagLen is the number of bytes added to the plaintext by the Seal operation.
+const TagLen = 16
 
 // ErrInvalidCiphertext is returned when the ciphertext is invalid or has been decrypted with the
 // wrong key.
@@ -54,7 +54,7 @@ func (p *Protocol) Mix(label string, input []byte) {
 	//
 	//     opk = HMAC(state, 0x01 || left_encode(|label|) || label || input)
 	h := hmac.New(sha256.New, p.state[:])
-	_, _ = h.Write([]byte{MIX_OP})
+	_, _ = h.Write([]byte{MixOp})
 	leftEncode(h, uint64(len(label))*8)
 	_, _ = h.Write([]byte(label))
 	_, _ = h.Write(input)
@@ -81,7 +81,7 @@ func (p *Protocol) MixWriter(label string, w io.Writer) io.WriteCloser {
 	//
 	//     opk = HMAC(state, 0x01 || left_encode(|label|) || label || input)
 	h := hmac.New(sha256.New, p.state[:])
-	_, _ = h.Write([]byte{MIX_OP})
+	_, _ = h.Write([]byte{MixOp})
 	leftEncode(h, uint64(len(label))*8)
 	_, _ = h.Write([]byte(label))
 	return &mixWriter{p, h, w}
@@ -122,7 +122,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	//
 	//     opk = HMAC(state, 0x02 || left_encode(|label|) || label || left_encode(|out|))
 	h := hmac.New(sha256.New, p.state[:])
-	_, _ = h.Write([]byte{DERIVE_OP})
+	_, _ = h.Write([]byte{DeriveOp})
 	leftEncode(h, uint64(len(label))*8)
 	_, _ = h.Write([]byte(label))
 	leftEncode(h, uint64(n)*8)
@@ -163,7 +163,7 @@ func (p *Protocol) Encrypt(label string, dst, src []byte) []byte {
 	//
 	//     dek || dak = HMAC(state, 0x03 || left_encode(|label|) || label || left_encode(|plaintext|))
 	h := hmac.New(sha256.New, p.state[:])
-	_, _ = h.Write([]byte{CRYPT_OP})
+	_, _ = h.Write([]byte{CryptOp})
 	leftEncode(h, uint64(len(label))*8)
 	_, _ = h.Write([]byte(label))
 	leftEncode(h, uint64(len(src))*8)
@@ -208,7 +208,7 @@ func (p *Protocol) Decrypt(label string, dst, src []byte) []byte {
 	//
 	//     dek || dak = HMAC(state, 0x03 || left_encode(|label|) || label || left_encode(|plaintext|))
 	h := hmac.New(sha256.New, p.state[:])
-	_, _ = h.Write([]byte{CRYPT_OP})
+	_, _ = h.Write([]byte{CryptOp})
 	leftEncode(h, uint64(len(label))*8)
 	_, _ = h.Write([]byte(label))
 	leftEncode(h, uint64(len(src))*8)
@@ -243,10 +243,10 @@ func (p *Protocol) Decrypt(label string, dst, src []byte) []byte {
 }
 
 // Encrypts the given slice in place using the protocol's current state as the key, appending an
-// authentication tag of TAG_LEN bytes, then ratchets the protocol's state using the label and
+// authentication tag of TagLen bytes, then ratchets the protocol's state using the label and
 // input.
 func (p *Protocol) Seal(label string, dst, src []byte) []byte {
-	ret, out := sliceForAppend(dst, len(src)+TAG_LEN)
+	ret, out := sliceForAppend(dst, len(src)+TagLen)
 
 	// Extract a data encryption key and data authentication key from the protocol's state, the
 	// operation code, the label, and the output length, using an unambiguous encoding to
@@ -254,7 +254,7 @@ func (p *Protocol) Seal(label string, dst, src []byte) []byte {
 	//
 	//     dek || dak = HMAC(state, 0x04 || left_encode(|label|) || label || left_encode(|plaintext|))
 	h := hmac.New(sha256.New, p.state[:])
-	_, _ = h.Write([]byte{AUTH_CRYPT_OP})
+	_, _ = h.Write([]byte{AuthCryptOp})
 	leftEncode(h, uint64(len(label))*8)
 	_, _ = h.Write([]byte(label))
 	leftEncode(h, uint64(len(src))*8)
@@ -273,9 +273,9 @@ func (p *Protocol) Seal(label string, dst, src []byte) []byte {
 	//
 	//     ciphertext = AES-CTR(dek, prk_0, plaintext)
 	block, _ := aes.NewCipher(dek)
-	c := cipher.NewCTR(block, prk[:TAG_LEN])
+	c := cipher.NewCTR(block, prk[:TagLen])
 	c.XORKeyStream(out, src)
-	copy(out[len(out)-TAG_LEN:], prk[:TAG_LEN])
+	copy(out[len(out)-TagLen:], prk[:TagLen])
 
 	// Use the PRK to extract a new protocol state:
 	//
@@ -291,13 +291,13 @@ func (p *Protocol) Seal(label string, dst, src []byte) []byte {
 }
 
 // Open decrypts the given slice in place using the protocol's current state as the key, verifying
-// the final TAG_LEN bytes as an authentication tag, then ratchets the protocol's state using the
+// the final TagLen bytes as an authentication tag, then ratchets the protocol's state using the
 // label and input.
 //
 // Returns the plaintext slice of in_out if the input was authenticated, an error otherwise.
 func (p *Protocol) Open(label string, dst, src []byte) ([]byte, error) {
-	ret, out := sliceForAppend(dst, len(src)-TAG_LEN)
-	src, tag := src[:len(src)-TAG_LEN], src[len(src)-TAG_LEN:]
+	ret, out := sliceForAppend(dst, len(src)-TagLen)
+	src, tag := src[:len(src)-TagLen], src[len(src)-TagLen:]
 
 	// Extract a data encryption key and data authentication key from the protocol's state, the
 	// operation code, the label, and the output length, using an unambiguous encoding to
@@ -305,7 +305,7 @@ func (p *Protocol) Open(label string, dst, src []byte) ([]byte, error) {
 	//
 	//     dek || dak = HMAC(state, 0x04 || left_encode(|label|) || label || left_encode(|plaintext|))
 	h := hmac.New(sha256.New, p.state[:])
-	_, _ = h.Write([]byte{AUTH_CRYPT_OP})
+	_, _ = h.Write([]byte{AuthCryptOp})
 	leftEncode(h, uint64(len(label))*8)
 	_, _ = h.Write([]byte(label))
 	leftEncode(h, uint64(len(src))*8)
@@ -339,7 +339,7 @@ func (p *Protocol) Open(label string, dst, src []byte) ([]byte, error) {
 	// Verify the authentication tag:
 	//
 	//     tag = prk_0
-	if hmac.Equal(tag, prk[:TAG_LEN]) {
+	if hmac.Equal(tag, prk[:TagLen]) {
 		return ret, nil
 	}
 
@@ -351,10 +351,10 @@ func (p *Protocol) Open(label string, dst, src []byte) ([]byte, error) {
 }
 
 const (
-	MIX_OP        = 0x01
-	DERIVE_OP     = 0x02
-	CRYPT_OP      = 0x03
-	AUTH_CRYPT_OP = 0x04
+	MixOp       = 0x01
+	DeriveOp    = 0x02
+	CryptOp     = 0x03
+	AuthCryptOp = 0x04
 )
 
 // leftEncode encodes an integer value using NIST SP 800-185's left_encode.
