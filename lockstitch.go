@@ -76,10 +76,10 @@ func (p *Protocol) Mix(label string, input []byte) {
 // written to the underlying writer. When Close() is called on the WriteCloser, the Mix operation is
 // completed and the Protocol's state is updated.
 func (p *Protocol) MixWriter(label string, w io.Writer) io.WriteCloser {
-	// Extract a PRK from the protocol's state, the operation code, the label, and the input,
-	// using an unambiguous encoding to prevent collisions:
+	// Extract an operation key from the protocol's state, the operation code, the label, and the
+	// input, using an unambiguous encoding to prevent collisions:
 	//
-	//     prk = HMAC(state, 0x01 || left_encode(|label|) || label || input)
+	//     opk = HMAC(state, 0x01 || left_encode(|label|) || label || input)
 	h := hmac.New(sha256.New, p.state[:])
 	_, _ = h.Write([]byte{MIX_OP})
 	leftEncode(h, uint64(len(label))*8)
