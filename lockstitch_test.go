@@ -22,11 +22,11 @@ func TestKnownAnswers(t *testing.T) {
 	}
 
 	ciphertext = protocol.Seal("fifth", nil, []byte("this is an example"))
-	if expected, actual := "94a54f24929bc03442d3f9945a34777dfff76ed2bb4e0e9b3e15608fefde7ef9fc51", hex.EncodeToString(ciphertext); expected != actual {
+	if expected, actual := "b965f961fb66a2e03287c1517e6ae3d1fb273e136cafca4382f78752f19717571087", hex.EncodeToString(ciphertext); expected != actual {
 		t.Errorf("Seal output mismatch, expected %v, got %v", expected, actual)
 	}
 
-	if expected, actual := "61e6981b6849c5e6", hex.EncodeToString(protocol.Derive("sixth", nil, 8)); expected != actual {
+	if expected, actual := "e11c63100f03f2bb", hex.EncodeToString(protocol.Derive("sixth", nil, 8)); expected != actual {
 		t.Errorf("DeriveSlice output mismatch, expected %v, got %v", expected, actual)
 	}
 }
