@@ -55,7 +55,7 @@ func (p *Protocol) Mix(label string, input []byte) {
 	//     opk = HMAC(state, 0x01 || left_encode(|label|) || label || input)
 	h := hmac.New(sha256.New, p.state)
 	_, _ = h.Write([]byte{MixOp})
-	leftEncode(h, uint64(len(label))*8)
+	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
 	_, _ = h.Write([]byte(label))
 	_, _ = h.Write(input)
 	opk := h.Sum(nil)
@@ -82,7 +82,7 @@ func (p *Protocol) MixWriter(label string, w io.Writer) io.WriteCloser {
 	//     opk = HMAC(state, 0x01 || left_encode(|label|) || label || input)
 	h := hmac.New(sha256.New, p.state)
 	_, _ = h.Write([]byte{MixOp})
-	leftEncode(h, uint64(len(label))*8)
+	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
 	_, _ = h.Write([]byte(label))
 	return &mixWriter{p, h, w}
 }
@@ -123,9 +123,9 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	//     opk = HMAC(state, 0x02 || left_encode(|label|) || label || left_encode(|out|))
 	h := hmac.New(sha256.New, p.state)
 	_, _ = h.Write([]byte{DeriveOp})
-	leftEncode(h, uint64(len(label))*8)
+	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
 	_, _ = h.Write([]byte(label))
-	leftEncode(h, uint64(n)*8) //nolint:gosec
+	_, _ = h.Write(leftEncode(uint64(n) * 8)) //nolint:gosec
 	opk := h.Sum(nil)
 
 	// Use the PRK to encrypt all zeroes with AES:
@@ -164,9 +164,9 @@ func (p *Protocol) Encrypt(label string, dst, src []byte) []byte {
 	//     dek || dak = HMAC(state, 0x03 || left_encode(|label|) || label || left_encode(|plaintext|))
 	h := hmac.New(sha256.New, p.state)
 	_, _ = h.Write([]byte{CryptOp})
-	leftEncode(h, uint64(len(label))*8)
+	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
 	_, _ = h.Write([]byte(label))
-	leftEncode(h, uint64(len(src))*8)
+	_, _ = h.Write(leftEncode(uint64(len(src)) * 8))
 	opk := h.Sum(nil)
 	dek, dak := opk[:16], opk[16:]
 
@@ -209,9 +209,9 @@ func (p *Protocol) Decrypt(label string, dst, src []byte) []byte {
 	//     dek || dak = HMAC(state, 0x03 || left_encode(|label|) || label || left_encode(|plaintext|))
 	h := hmac.New(sha256.New, p.state)
 	_, _ = h.Write([]byte{CryptOp})
-	leftEncode(h, uint64(len(label))*8)
+	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
 	_, _ = h.Write([]byte(label))
-	leftEncode(h, uint64(len(src))*8)
+	_, _ = h.Write(leftEncode(uint64(len(src)) * 8))
 	opk := h.Sum(nil)
 	dek, dak := opk[:16], opk[16:]
 
@@ -255,9 +255,9 @@ func (p *Protocol) Seal(label string, dst, src []byte) []byte {
 	//     dek || dak = HMAC(state, 0x04 || left_encode(|label|) || label || left_encode(|plaintext|))
 	h := hmac.New(sha256.New, p.state)
 	_, _ = h.Write([]byte{AuthCryptOp})
-	leftEncode(h, uint64(len(label))*8)
+	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
 	_, _ = h.Write([]byte(label))
-	leftEncode(h, uint64(len(src))*8)
+	_, _ = h.Write(leftEncode(uint64(len(src)) * 8))
 	opk := h.Sum(nil)
 	dek, dak := opk[:16], opk[16:]
 
@@ -306,9 +306,9 @@ func (p *Protocol) Open(label string, dst, src []byte) ([]byte, error) {
 	//     dek || dak = HMAC(state, 0x04 || left_encode(|label|) || label || left_encode(|plaintext|))
 	h := hmac.New(sha256.New, p.state)
 	_, _ = h.Write([]byte{AuthCryptOp})
-	leftEncode(h, uint64(len(label))*8)
+	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
 	_, _ = h.Write([]byte(label))
-	leftEncode(h, uint64(len(src))*8)
+	_, _ = h.Write(leftEncode(uint64(len(src)) * 8))
 	opk := h.Sum(nil)
 	dek, dak := opk[:16], opk[16:]
 
@@ -365,12 +365,12 @@ const (
 // leftEncode encodes an integer value using NIST SP 800-185's left_encode.
 //
 // https://www.nist.gov/publications/sha-3-derived-functions-cshake-kmac-tuplehash-and-parallelhash
-func leftEncode(w io.Writer, value uint64) {
+func leftEncode(value uint64) []byte {
 	buf := [9]byte{}
 	binary.BigEndian.PutUint64(buf[1:], value)
 	n := max(len(buf)-1-(bits.LeadingZeros64(value)/8), 1)
 	buf[len(buf)-n-1] = byte(n)
-	_, _ = w.Write(buf[len(buf)-n-1:])
+	return buf[len(buf)-n-1:]
 }
 
 // sliceForAppend takes a slice and a requested number of bytes. It returns a

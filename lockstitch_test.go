@@ -32,39 +32,27 @@ func TestKnownAnswers(t *testing.T) {
 }
 
 func TestLeftEncode(t *testing.T) {
-	buf := new(bytes.Buffer)
-	leftEncode(buf, 0)
-	if expected, actual := []byte{1, 0}, buf.Bytes(); !bytes.Equal(expected, actual) {
+	if expected, actual := []byte{1, 0}, leftEncode(0); !bytes.Equal(expected, actual) {
 		t.Errorf("expected %v, got %v", expected, actual)
 	}
 
-	buf.Reset()
-	leftEncode(buf, 128)
-	if expected, actual := []byte{1, 128}, buf.Bytes(); !bytes.Equal(expected, actual) {
+	if expected, actual := []byte{1, 128}, leftEncode(128); !bytes.Equal(expected, actual) {
 		t.Errorf("expected %v, got %v", expected, actual)
 	}
 
-	buf.Reset()
-	leftEncode(buf, 65536)
-	if expected, actual := []byte{3, 1, 0, 0}, buf.Bytes(); !bytes.Equal(expected, actual) {
+	if expected, actual := []byte{3, 1, 0, 0}, leftEncode(65536); !bytes.Equal(expected, actual) {
 		t.Errorf("expected %v, got %v", expected, actual)
 	}
 
-	buf.Reset()
-	leftEncode(buf, 4096)
-	if expected, actual := []byte{2, 16, 0}, buf.Bytes(); !bytes.Equal(expected, actual) {
+	if expected, actual := []byte{2, 16, 0}, leftEncode(4096); !bytes.Equal(expected, actual) {
 		t.Errorf("expected %v, got %v", expected, actual)
 	}
 
-	buf.Reset()
-	leftEncode(buf, 18446744073709551615)
-	if expected, actual := []byte{8, 255, 255, 255, 255, 255, 255, 255, 255}, buf.Bytes(); !bytes.Equal(expected, actual) {
+	if expected, actual := []byte{8, 255, 255, 255, 255, 255, 255, 255, 255}, leftEncode(18446744073709551615); !bytes.Equal(expected, actual) {
 		t.Errorf("expected %v, got %v", expected, actual)
 	}
 
-	buf.Reset()
-	leftEncode(buf, 12345)
-	if expected, actual := []byte{2, 48, 57}, buf.Bytes(); !bytes.Equal(expected, actual) {
+	if expected, actual := []byte{2, 48, 57}, leftEncode(12345); !bytes.Equal(expected, actual) {
 		t.Errorf("expected %v, got %v", expected, actual)
 	}
 }
@@ -110,16 +98,13 @@ func TestMixAndMixWriter(t *testing.T) {
 func FuzzLeftEncode(f *testing.F) {
 	f.Add(uint64(2), uint64(3))
 	f.Fuzz(func(t *testing.T, a uint64, b uint64) {
-		ab := new(bytes.Buffer)
-		leftEncode(ab, a)
+		ab := leftEncode(a)
+		bb := leftEncode(b)
 
-		bb := new(bytes.Buffer)
-		leftEncode(bb, b)
-
-		if a == b && !bytes.Equal(ab.Bytes(), bb.Bytes()) {
-			t.Errorf("%v encoded to both %v and %v", a, ab.Bytes(), bb.Bytes())
-		} else if a != b && bytes.Equal(ab.Bytes(), bb.Bytes()) {
-			t.Errorf("%v and %v both encoded to %v", a, b, ab.Bytes())
+		if a == b && !bytes.Equal(ab, bb) {
+			t.Errorf("%v encoded to both %v and %v", a, ab, bb)
+		} else if a != b && bytes.Equal(ab, bb) {
+			t.Errorf("%v and %v both encoded to %v", a, b, ab)
 		}
 	})
 }
