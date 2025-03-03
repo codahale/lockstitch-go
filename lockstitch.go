@@ -350,6 +350,11 @@ func (p *Protocol) Open(label string, dst, src []byte) ([]byte, error) {
 	return nil, ErrInvalidCiphertext
 }
 
+// Clone returns an exact clone of the receiver Protocol.
+func (p *Protocol) Clone() Protocol {
+	return Protocol{state: p.state}
+}
+
 const (
 	MixOp       = 0x01
 	DeriveOp    = 0x02
