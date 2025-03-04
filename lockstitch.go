@@ -8,6 +8,7 @@
 package lockstitch
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
@@ -49,6 +50,12 @@ func NewProtocol(domain string) Protocol {
 
 // Mix ratchets the protocol's state using the given label and input.
 func (p *Protocol) Mix(label string, input []byte) {
+	_, _ = p.MixReader(label, bytes.NewReader(input))
+}
+
+// MixReader ratchets the protocol's state using the given label and input. It returns the number of
+// bytes copied and the first error encountered while copying, if any.
+func (p *Protocol) MixReader(label string, r io.Reader) (int64, error) {
 	// Extract an operation key from the protocol's state, the operation code, the label, and the
 	// input, using an unambiguous encoding to prevent collisions:
 	//
@@ -57,7 +64,10 @@ func (p *Protocol) Mix(label string, input []byte) {
 	_, _ = h.Write([]byte{opMix})
 	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
 	_, _ = h.Write([]byte(label))
-	_, _ = h.Write(input)
+	n, err := io.Copy(h, r)
+	if err != nil {
+		return n, err
+	}
 	opk := h.Sum(nil)
 
 	// Extract a new state value from the protocol's old state and the operation key:
@@ -69,6 +79,8 @@ func (p *Protocol) Mix(label string, input []byte) {
 	h.Reset()
 	_, _ = h.Write(opk)
 	p.state = h.Sum(p.state[:0])
+
+	return n, nil
 }
 
 // MixWriter initiates a Mix operation with the given label and returns a WriteCloser wrapping the
