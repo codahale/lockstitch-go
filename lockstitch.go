@@ -60,10 +60,7 @@ func (p *Protocol) MixReader(label string, r io.Reader) (int64, error) {
 	// input, using an unambiguous encoding to prevent collisions:
 	//
 	//     opk = HMAC(state, 0x01 || left_encode(|label|) || label || input)
-	h := hmac.New(sha256.New, p.state)
-	_, _ = h.Write([]byte{opMix})
-	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
-	_, _ = h.Write([]byte(label))
+	h := p.startOp(opMix, label)
 	n, err := io.Copy(h, r)
 	if err != nil {
 		return n, err
@@ -92,10 +89,7 @@ func (p *Protocol) MixWriter(label string, w io.Writer) io.WriteCloser {
 	// input, using an unambiguous encoding to prevent collisions:
 	//
 	//     opk = HMAC(state, 0x01 || left_encode(|label|) || label || input)
-	h := hmac.New(sha256.New, p.state)
-	_, _ = h.Write([]byte{opMix})
-	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
-	_, _ = h.Write([]byte(label))
+	h := p.startOp(opMix, label)
 	return &mixWriter{p, h, w}
 }
 
@@ -134,10 +128,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	// output length, using an unambiguous encoding to prevent collisions:
 	//
 	//     opk = HMAC(state, 0x02 || left_encode(|label|) || label || left_encode(|out|))
-	h := hmac.New(sha256.New, p.state)
-	_, _ = h.Write([]byte{opDerive})
-	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
-	_, _ = h.Write([]byte(label))
+	h := p.startOp(opDerive, label)
 	_, _ = h.Write(leftEncode(uint64(n) * 8)) //nolint:gosec
 	opk := h.Sum(nil)
 
@@ -178,10 +169,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	// prevent collisions:
 	//
 	//     dek || dak = HMAC(state, 0x03 || left_encode(|label|) || label || left_encode(|plaintext|))
-	h := hmac.New(sha256.New, p.state)
-	_, _ = h.Write([]byte{opCrypt})
-	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
-	_, _ = h.Write([]byte(label))
+	h := p.startOp(opCrypt, label)
 	_, _ = h.Write(leftEncode(uint64(len(plaintext)) * 8))
 	opk := h.Sum(nil)
 	dek, dak := opk[:16], opk[16:]
@@ -226,10 +214,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	// prevent collisions:
 	//
 	//     dek || dak = HMAC(state, 0x03 || left_encode(|label|) || label || left_encode(|plaintext|))
-	h := hmac.New(sha256.New, p.state)
-	_, _ = h.Write([]byte{opCrypt})
-	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
-	_, _ = h.Write([]byte(label))
+	h := p.startOp(opCrypt, label)
 	_, _ = h.Write(leftEncode(uint64(len(ciphertext)) * 8))
 	opk := h.Sum(nil)
 	dek, dak := opk[:16], opk[16:]
@@ -276,10 +261,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	// prevent collisions:
 	//
 	//     dek || dak = HMAC(state, 0x04 || left_encode(|label|) || label || left_encode(|plaintext|))
-	h := hmac.New(sha256.New, p.state)
-	_, _ = h.Write([]byte{opAuthCrypt})
-	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
-	_, _ = h.Write([]byte(label))
+	h := p.startOp(opAuthCrypt, label)
 	_, _ = h.Write(leftEncode(uint64(len(plaintext)) * 8))
 	opk := h.Sum(nil)
 	dek, dak := opk[:16], opk[16:]
@@ -331,10 +313,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	// prevent collisions:
 	//
 	//     dek || dak = HMAC(state, 0x04 || left_encode(|label|) || label || left_encode(|plaintext|))
-	h := hmac.New(sha256.New, p.state)
-	_, _ = h.Write([]byte{opAuthCrypt})
-	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
-	_, _ = h.Write([]byte(label))
+	h := p.startOp(opAuthCrypt, label)
 	_, _ = h.Write(leftEncode(uint64(len(plaintext)) * 8))
 	opk := h.Sum(nil)
 	dek, dak := opk[:16], opk[16:]
@@ -380,6 +359,14 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 // Clone returns an exact clone of the receiver Protocol.
 func (p *Protocol) Clone() Protocol {
 	return Protocol{state: p.state}
+}
+
+func (p *Protocol) startOp(op byte, label string) hash.Hash {
+	h := hmac.New(sha256.New, p.state)
+	_, _ = h.Write([]byte{op})
+	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
+	_, _ = h.Write([]byte(label))
+	return h
 }
 
 const (
