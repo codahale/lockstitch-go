@@ -143,9 +143,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	for i := range out {
 		out[i] = 0
 	}
-	block, _ := aes.NewCipher(opk[:16])
-	c := cipher.NewCTR(block, opk[16:])
-	c.XORKeyStream(out, out)
+	aesCTR(opk[:16], opk[16:], out, out)
 
 	// Extract a new state value from the protocol's old state and the operation key:
 	//
@@ -188,9 +186,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	// Use the DEK to encrypt the plaintext with AES-128-CTR:
 	//
 	//     ciphertext = AES-CTR(dek, [0x00; 16], plaintext)
-	block, _ := aes.NewCipher(dek)
-	c := cipher.NewCTR(block, make([]byte, 16))
-	c.XORKeyStream(ciphertext, plaintext)
+	aesCTR(dek, make([]byte, 16), ciphertext, plaintext)
 
 	// Extract a new state value from the protocol's old state and the PRK:
 	//
@@ -226,9 +222,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	// Use the DEK to decrypt the ciphertext with AES-128-CTR:
 	//
 	//     plaintext = AES-CTR(dek, [0x00; 16], ciphertext)
-	block, _ := aes.NewCipher(dek)
-	c := cipher.NewCTR(block, make([]byte, 16))
-	c.XORKeyStream(plaintext, ciphertext)
+	aesCTR(dek, make([]byte, 16), plaintext, ciphertext)
 
 	// Use the DAK to extract a PRK from the plaintext with HMAC-SHA-256:
 	//
@@ -282,9 +276,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	// the PRK as the nonce:
 	//
 	//     ciphertext = AES-CTR(dek, prk_0, plaintext)
-	block, _ := aes.NewCipher(dek)
-	c := cipher.NewCTR(block, tag)
-	c.XORKeyStream(ciphertext, plaintext)
+	aesCTR(dek, tag, ciphertext, plaintext)
 
 	// Use the PRK to extract a new protocol state:
 	//
@@ -325,9 +317,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	// Use the DEK and the tag to decrypt the plaintext with AES-128:
 	//
 	//     plaintext = AES-CTR(dek, tag, ciphertext)
-	block, _ := aes.NewCipher(dek)
-	c := cipher.NewCTR(block, tag)
-	c.XORKeyStream(plaintext, ciphertext)
+	aesCTR(dek, tag, plaintext, ciphertext)
 
 	// Use the DAK to extract a PRK from the plaintext with HMAC-SHA-256:
 	//
@@ -379,6 +369,14 @@ const (
 	opCrypt     = 0x03
 	opAuthCrypt = 0x04
 )
+
+func aesCTR(key, nonce, dst, src []byte) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		panic(err)
+	}
+	cipher.NewCTR(block, nonce).XORKeyStream(dst, src)
+}
 
 // leftEncode encodes an integer value using NIST SP 800-185's left_encode.
 //
