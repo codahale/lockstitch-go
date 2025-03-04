@@ -115,7 +115,8 @@ func (w *mixWriter) Close() error {
 }
 
 // Derive generates pseudorandom output from the Protocol's current state, the label, and the output
-// length, then ratchets the Protocol's state with the label and output length.
+// length, then ratchets the Protocol's state with the label and output length. The output is
+// appended to dst and the resulting slice is returned.
 func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	// Extract an operation key from the protocol's state, the operation code, the label, and the
 	// output length, using an unambiguous encoding to prevent collisions:
@@ -154,8 +155,11 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 
 // Encrypt encrypts the given slice in place using the protocol's current state as the key, then
 // ratchets the protocol's state using the label and input.
-func (p *Protocol) Encrypt(label string, dst, src []byte) []byte {
-	ret, out := sliceForAppend(dst, len(src))
+//
+// To reuse plaintext's storage for the encrypted output, use plaintext[:0] as dst. Otherwise, the
+// remaining capacity of dst must not overlap plaintext.
+func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
+	ret, ciphertext := sliceForAppend(dst, len(plaintext))
 
 	// Extract a data encryption key and data authentication key from the protocol's state, the
 	// operation code, the label, and the output length, using an unambiguous encoding to
@@ -166,7 +170,7 @@ func (p *Protocol) Encrypt(label string, dst, src []byte) []byte {
 	_, _ = h.Write([]byte{opCrypt})
 	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
 	_, _ = h.Write([]byte(label))
-	_, _ = h.Write(leftEncode(uint64(len(src)) * 8))
+	_, _ = h.Write(leftEncode(uint64(len(plaintext)) * 8))
 	opk := h.Sum(nil)
 	dek, dak := opk[:16], opk[16:]
 
@@ -174,7 +178,7 @@ func (p *Protocol) Encrypt(label string, dst, src []byte) []byte {
 	//
 	//     prk = HMAC(dak, plaintext)
 	h2 := hmac.New(sha256.New, dak)
-	_, _ = h2.Write(src)
+	_, _ = h2.Write(plaintext)
 	prk := h2.Sum(nil)
 
 	// Use the DEK to encrypt the plaintext with AES-128-CTR:
@@ -182,7 +186,7 @@ func (p *Protocol) Encrypt(label string, dst, src []byte) []byte {
 	//     ciphertext = AES-CTR(dek, [0x00; 16], plaintext)
 	block, _ := aes.NewCipher(dek)
 	c := cipher.NewCTR(block, make([]byte, 16))
-	c.XORKeyStream(out, src)
+	c.XORKeyStream(ciphertext, plaintext)
 
 	// Extract a new state value from the protocol's old state and the PRK:
 	//
@@ -199,8 +203,11 @@ func (p *Protocol) Encrypt(label string, dst, src []byte) []byte {
 
 // Decrypt decrypts the given slice in place using the protocol's current state as the key, then
 // ratchets the protocol's state using the label and input.
-func (p *Protocol) Decrypt(label string, dst, src []byte) []byte {
-	ret, out := sliceForAppend(dst, len(src))
+//
+// To reuse ciphertext's storage for the decrypted output, use ciphertext[:0] as dst. Otherwise, the
+// remaining capacity of dst must not overlap ciphertext.
+func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
+	ret, plaintext := sliceForAppend(dst, len(ciphertext))
 
 	// Extract a data encryption key and data authentication key from the protocol's state, the
 	// operation code, the label, and the output length, using an unambiguous encoding to
@@ -211,7 +218,7 @@ func (p *Protocol) Decrypt(label string, dst, src []byte) []byte {
 	_, _ = h.Write([]byte{opCrypt})
 	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
 	_, _ = h.Write([]byte(label))
-	_, _ = h.Write(leftEncode(uint64(len(src)) * 8))
+	_, _ = h.Write(leftEncode(uint64(len(ciphertext)) * 8))
 	opk := h.Sum(nil)
 	dek, dak := opk[:16], opk[16:]
 
@@ -220,13 +227,13 @@ func (p *Protocol) Decrypt(label string, dst, src []byte) []byte {
 	//     plaintext = AES-CTR(dek, [0x00; 16], ciphertext)
 	block, _ := aes.NewCipher(dek)
 	c := cipher.NewCTR(block, make([]byte, 16))
-	c.XORKeyStream(out, src)
+	c.XORKeyStream(plaintext, ciphertext)
 
 	// Use the DAK to extract a PRK from the plaintext with HMAC-SHA-256:
 	//
 	//     prk = HMAC(dak, plaintext)
 	h2 := hmac.New(sha256.New, dak)
-	_, _ = h2.Write(out)
+	_, _ = h2.Write(plaintext)
 	prk := h2.Sum(nil)
 
 	// Extract a new state value from the protocol's old state and the PRK:
