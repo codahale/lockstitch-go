@@ -384,7 +384,7 @@ const (
 //
 // https://www.nist.gov/publications/sha-3-derived-functions-cshake-kmac-tuplehash-and-parallelhash
 func leftEncode(value uint64) []byte {
-	buf := [9]byte{}
+	var buf [9]byte
 	binary.BigEndian.PutUint64(buf[1:], value)
 	n := max(len(buf)-1-(bits.LeadingZeros64(value)/8), 1)
 	buf[len(buf)-n-1] = byte(n)
