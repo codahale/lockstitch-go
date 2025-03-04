@@ -26,7 +26,7 @@ const TagLen = 16
 // wrong key.
 var ErrInvalidCiphertext = errors.New("lockstitch: invalid ciphertext")
 
-// Protocol is a stateful object providing fine-grained symmetric-key cryptographic services like
+// A Protocol is a stateful object providing fine-grained symmetric-key cryptographic services like
 // hashing, message authentication codes, pseudo-random functions, authenticated encryption, and
 // more.
 type Protocol struct {
