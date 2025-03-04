@@ -124,12 +124,16 @@ func (w *mixWriter) Close() error {
 // length, then ratchets the Protocol's state with the label and output length. The output is
 // appended to dst and the resulting slice is returned.
 func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
+	if n < 0 {
+		panic("invalid argument to Derive: n cannot be negative")
+	}
+
 	// Extract an operation key from the protocol's state, the operation code, the label, and the
 	// output length, using an unambiguous encoding to prevent collisions:
 	//
 	//     opk = HMAC(state, 0x02 || left_encode(|label|) || label || left_encode(|out|))
 	h := p.startOp(opDerive, label)
-	_, _ = h.Write(leftEncode(uint64(n) * 8)) //nolint:gosec
+	_, _ = h.Write(leftEncode(uint64(n) * 8))
 	opk := h.Sum(nil)
 
 	// Use the PRK to encrypt all zeroes with AES:
