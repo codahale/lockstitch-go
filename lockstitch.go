@@ -8,7 +8,6 @@
 package lockstitch
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
@@ -50,21 +49,12 @@ func NewProtocol(domain string) Protocol {
 
 // Mix ratchets the protocol's state using the given label and input.
 func (p *Protocol) Mix(label string, input []byte) {
-	_, _ = p.MixReader(label, bytes.NewReader(input))
-}
-
-// MixReader ratchets the protocol's state using the given label and input. It returns the number of
-// bytes copied and the first error encountered while copying, if any.
-func (p *Protocol) MixReader(label string, r io.Reader) (int64, error) {
 	// Extract an operation key from the protocol's state, the operation code, the label, and the
 	// input, using an unambiguous encoding to prevent collisions:
 	//
 	//     opk = HMAC(state, 0x01 || left_encode(|label|) || label || input)
 	h := p.startOp(opMix, label)
-	n, err := io.Copy(h, r)
-	if err != nil {
-		return n, err
-	}
+	h.Write(input)
 	opk := h.Sum(nil)
 
 	// Extract a new state value from the protocol's old state and the operation key:
@@ -76,8 +66,52 @@ func (p *Protocol) MixReader(label string, r io.Reader) (int64, error) {
 	h.Reset()
 	h.Write(opk)
 	p.state = h.Sum(p.state[:0])
+}
+
+// MixReader initiates a Mix operation with the given label and returns a ReadCloser wrapping the
+// given Reader. All data read from the WriteCloser will be read from the underlying reader and used
+// in the Mix operation.  When Close() is called on the ReadCloser, the Mix operation is completed
+// and the Protocol's state is updated.
+func (p *Protocol) MixReader(label string, r io.Reader) io.ReadCloser {
+	// Extract an operation key from the protocol's state, the operation code, the label, and the
+	// input, using an unambiguous encoding to prevent collisions:
+	//
+	//     opk = HMAC(state, 0x01 || left_encode(|label|) || label || input)
+	h := p.startOp(opMix, label)
+	return &mixReader{p, h, r}
+}
+
+type mixReader struct {
+	p *Protocol
+	h hash.Hash
+	r io.Reader
+}
+
+func (r *mixReader) Read(p []byte) (int, error) {
+	n, err := r.r.Read(p)
+	if err != nil {
+		return n, err
+	}
+
+	r.h.Write(p[:n])
 
 	return n, nil
+}
+
+func (r *mixReader) Close() error {
+	opk := r.h.Sum(nil)
+
+	// Extract a new state value from the protocol's old state and the operation key:
+	//
+	//     state' = HMAC(state, opk)
+	//
+	// This preserves the invariant that the protocol state is the HMAC output of two uniform
+	// random keys.
+	r.h.Reset()
+	r.h.Write(opk)
+	r.p.state = r.h.Sum(r.p.state[:0])
+
+	return nil
 }
 
 // MixWriter initiates a Mix operation with the given label and returns a WriteCloser wrapping the

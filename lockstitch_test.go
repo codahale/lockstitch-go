@@ -3,6 +3,7 @@ package lockstitch
 import (
 	"bytes"
 	"encoding/hex"
+	"io"
 	"testing"
 )
 
@@ -82,6 +83,44 @@ func TestMixAndMixWriter(t *testing.T) {
 	_, _ = w2.Write([]byte("2"))
 	_, _ = w2.Write([]byte("2"))
 	if err := w2.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if expected, actual := []byte("222"), b2.Bytes(); !bytes.Equal(expected, actual) {
+		t.Errorf("expected write of %v but was %v", expected, actual)
+	}
+
+	bd := b.Derive("three", nil, 8)
+
+	if !bytes.Equal(ad, bd) {
+		t.Errorf("expected %v but was %v", ad, bd)
+	}
+}
+
+func TestMixAndMixReader(t *testing.T) {
+	a := NewProtocol("test")
+	a.Mix("one", []byte("111"))
+	a.Mix("two", []byte("222"))
+	ad := a.Derive("three", nil, 8)
+
+	b := NewProtocol("test")
+	r1 := b.MixReader("one", bytes.NewReader([]byte("111")))
+	b1 := new(bytes.Buffer)
+	if _, err := io.Copy(b1, r1); err != nil {
+		t.Fatal(err)
+	}
+	if err := r1.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if expected, actual := []byte("111"), b1.Bytes(); !bytes.Equal(expected, actual) {
+		t.Errorf("expected write of %v but was %v", expected, actual)
+	}
+
+	r2 := b.MixReader("two", bytes.NewReader([]byte("222")))
+	b2 := new(bytes.Buffer)
+	if _, err := io.Copy(b2, r2); err != nil {
+		t.Fatal(err)
+	}
+	if err := r2.Close(); err != nil {
 		t.Fatal(err)
 	}
 	if expected, actual := []byte("222"), b2.Bytes(); !bytes.Equal(expected, actual) {
