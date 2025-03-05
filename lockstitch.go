@@ -41,7 +41,7 @@ func NewProtocol(domain string) Protocol {
 		220, 87, 54, 63, 227, 165, 27, 245, 65, 144, 247, 188, 40, 15, 101, 174, 80, 197, 19, 248,
 		7, 216, 209, 168, 247, 171, 219, 147, 63, 135, 63, 1,
 	})
-	_, _ = h.Write([]byte(domain))
+	h.Write([]byte(domain))
 
 	return Protocol{
 		state: h.Sum(nil),
@@ -74,7 +74,7 @@ func (p *Protocol) MixReader(label string, r io.Reader) (int64, error) {
 	// This preserves the invariant that the protocol state is the HMAC output of two uniform
 	// random keys.
 	h.Reset()
-	_, _ = h.Write(opk)
+	h.Write(opk)
 	p.state = h.Sum(p.state[:0])
 
 	return n, nil
@@ -114,7 +114,7 @@ func (w *mixWriter) Close() error {
 	// This preserves the invariant that the protocol state is the HMAC output of two uniform
 	// random keys.
 	w.h.Reset()
-	_, _ = w.h.Write(opk)
+	w.h.Write(opk)
 	w.p.state = w.h.Sum(w.p.state[:0])
 
 	return nil
@@ -133,7 +133,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	//
 	//     opk = HMAC(state, 0x02 || left_encode(|label|) || label || left_encode(|out|))
 	h := p.startOp(opDerive, label)
-	_, _ = h.Write(leftEncode(uint64(n) * 8))
+	h.Write(leftEncode(uint64(n) * 8))
 	opk := h.Sum(nil)
 
 	// Use the PRK to encrypt all zeroes with AES:
@@ -152,7 +152,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	// This preserves the invariant that the protocol state is the HMAC output of two uniform
 	// random keys.
 	h.Reset()
-	_, _ = h.Write(opk)
+	h.Write(opk)
 	p.state = h.Sum(p.state[:0])
 
 	return ret
@@ -172,7 +172,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	//
 	//     dek || dak = HMAC(state, 0x03 || left_encode(|label|) || label || left_encode(|plaintext|))
 	h := p.startOp(opCrypt, label)
-	_, _ = h.Write(leftEncode(uint64(len(plaintext)) * 8))
+	h.Write(leftEncode(uint64(len(plaintext)) * 8))
 	opk := h.Sum(nil)
 	dek, dak := opk[:16], opk[16:]
 
@@ -180,7 +180,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	//
 	//     prk = HMAC(dak, plaintext)
 	h2 := hmac.New(sha256.New, dak)
-	_, _ = h2.Write(plaintext)
+	h2.Write(plaintext)
 	prk := h2.Sum(nil)
 
 	// Use the DEK to encrypt the plaintext with AES-128-CTR:
@@ -195,7 +195,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	// This preserves the invariant that the protocol state is the HMAC output of two uniform
 	// random keys.
 	h.Reset()
-	_, _ = h.Write(prk)
+	h.Write(prk)
 	p.state = h.Sum(p.state[:0])
 
 	return ret
@@ -215,7 +215,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	//
 	//     dek || dak = HMAC(state, 0x03 || left_encode(|label|) || label || left_encode(|plaintext|))
 	h := p.startOp(opCrypt, label)
-	_, _ = h.Write(leftEncode(uint64(len(ciphertext)) * 8))
+	h.Write(leftEncode(uint64(len(ciphertext)) * 8))
 	opk := h.Sum(nil)
 	dek, dak := opk[:16], opk[16:]
 
@@ -228,7 +228,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	//
 	//     prk = HMAC(dak, plaintext)
 	h2 := hmac.New(sha256.New, dak)
-	_, _ = h2.Write(plaintext)
+	h2.Write(plaintext)
 	prk := h2.Sum(nil)
 
 	// Extract a new state value from the protocol's old state and the PRK:
@@ -238,7 +238,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	// This preserves the invariant that the protocol state is the HMAC output of two uniform
 	// random keys.
 	h.Reset()
-	_, _ = h.Write(prk)
+	h.Write(prk)
 	p.state = h.Sum(p.state[:0])
 
 	return ret
@@ -260,7 +260,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	//
 	//     dek || dak = HMAC(state, 0x04 || left_encode(|label|) || label || left_encode(|plaintext|))
 	h := p.startOp(opAuthCrypt, label)
-	_, _ = h.Write(leftEncode(uint64(len(plaintext)) * 8))
+	h.Write(leftEncode(uint64(len(plaintext)) * 8))
 	opk := h.Sum(nil)
 	dek, dak := opk[:16], opk[16:]
 
@@ -268,7 +268,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	//
 	//     prk_0 || prk_1 = HMAC(dak, plaintext)
 	h2 := hmac.New(sha256.New, dak)
-	_, _ = h2.Write(plaintext)
+	h2.Write(plaintext)
 	prk := h2.Sum(nil)
 	copy(tag, prk[:TagLen])
 
@@ -285,7 +285,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	// This preserves the invariant that the protocol state is the HMAC output of two uniform
 	// random keys.
 	h.Reset()
-	_, _ = h.Write(prk)
+	h.Write(prk)
 	p.state = h.Sum(p.state[:0])
 
 	return ret
@@ -310,7 +310,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	//
 	//     dek || dak = HMAC(state, 0x04 || left_encode(|label|) || label || left_encode(|plaintext|))
 	h := p.startOp(opAuthCrypt, label)
-	_, _ = h.Write(leftEncode(uint64(len(plaintext)) * 8))
+	h.Write(leftEncode(uint64(len(plaintext)) * 8))
 	opk := h.Sum(nil)
 	dek, dak := opk[:16], opk[16:]
 
@@ -323,7 +323,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	//
 	//     prk_0 || prk_1 = HMAC(dak, plaintext)
 	h2 := hmac.New(sha256.New, dak)
-	_, _ = h2.Write(plaintext)
+	h2.Write(plaintext)
 	prk := h2.Sum(opk[:0])
 
 	// Use the PRK to extract a new protocol state:
@@ -333,7 +333,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	// This preserves the invariant that the protocol state is the HMAC output of two uniform
 	// random keys.
 	h.Reset()
-	_, _ = h.Write(prk)
+	h.Write(prk)
 	p.state = h.Sum(p.state[:0])
 
 	// Verify the authentication tag:
@@ -357,9 +357,9 @@ func (p *Protocol) Clone() Protocol {
 
 func (p *Protocol) startOp(op byte, label string) hash.Hash {
 	h := hmac.New(sha256.New, p.state)
-	_, _ = h.Write([]byte{op})
-	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
-	_, _ = h.Write([]byte(label))
+	h.Write([]byte{op})
+	h.Write(leftEncode(uint64(len(label)) * 8))
+	h.Write([]byte(label))
 	return h
 }
 
