@@ -121,8 +121,8 @@ func (w *mixWriter) Close() error {
 }
 
 // Derive generates pseudorandom output from the Protocol's current state, the label, and the output
-// length, then ratchets the Protocol's state with the label and output length. The output is
-// appended to dst and the resulting slice is returned.
+// length, then ratchets the Protocol's state with the label and output length. It appends the
+// output to dst and returns the resulting slice.
 func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	if n < 0 {
 		panic("invalid argument to Derive: n cannot be negative")
@@ -158,8 +158,9 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	return ret
 }
 
-// Encrypt encrypts the given slice in place using the protocol's current state as the key, then
-// ratchets the protocol's state using the label and input.
+// Encrypt encrypts the plaintext using the protocol's current state as the key, then ratchets the
+// protocol's state using the label and input. It appends the ciphertext to dst and returns the
+// resulting slice.
 //
 // To reuse plaintext's storage for the encrypted output, use plaintext[:0] as dst. Otherwise, the
 // remaining capacity of dst must not overlap plaintext.
@@ -201,8 +202,9 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	return ret
 }
 
-// Decrypt decrypts the given slice in place using the protocol's current state as the key, then
-// ratchets the protocol's state using the label and input.
+// Decrypt decrypts the given ciphertext using the protocol's current state as the key, then
+// ratchets the protocol's state using the label and input. It appends the plaintext to dst and
+// returns the resulting slice.
 //
 // To reuse ciphertext's storage for the decrypted output, use ciphertext[:0] as dst. Otherwise, the
 // remaining capacity of dst must not overlap ciphertext.
@@ -244,9 +246,9 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	return ret
 }
 
-// Encrypts the given slice in place using the protocol's current state as the key, appending an
-// authentication tag of TagLen bytes, then ratchets the protocol's state using the label and
-// input.
+// Encrypts the given plaintext using the protocol's current state as the key, appending an
+// authentication tag of TagLen bytes, then ratchets the protocol's state using the label and input.
+// It appends the ciphertext and authentication tag to dst and returns the resulting slice.
 //
 // To reuse plaintext's storage for the encrypted output, use plaintext[:0] as dst. Otherwise, the
 // remaining capacity of dst must not overlap plaintext.
@@ -293,10 +295,8 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 
 // Open decrypts the given slice in place using the protocol's current state as the key, verifying
 // the final TagLen bytes as an authentication tag, then ratchets the protocol's state using the
-// label and input.
-//
-// If the ciphertext is authentic, the plaintext is appended to dst and returned; otherwise,
-// ErrInvalidCiphertext is returned.
+// label and input. If the ciphertext is authentic, it appends the plaintext to dst and returns the
+// resulting slice; otherwise, ErrInvalidCiphertext is returned.
 //
 // To reuse ciphertext's storage for the decrypted output, use ciphertext[:0] as dst. Otherwise, the
 // remaining capacity of dst must not overlap ciphertext.
