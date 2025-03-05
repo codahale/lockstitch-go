@@ -45,15 +45,28 @@ func FuzzAEAD(f *testing.F) {
 		return protocol.Open("message", nil, message)
 	}
 
-	f.Add([]byte("yellow submarine"), []byte("12345678"), []byte("hello world"))
-	f.Fuzz(func(t *testing.T, key []byte, nonce []byte, plaintext []byte) {
+	f.Add([]byte("yellow submarine"), []byte("12345678"), []byte("hello world"), 2, byte(100))
+	f.Fuzz(func(t *testing.T, key []byte, nonce []byte, plaintext []byte, idx int, mask byte) {
+		if mask == 0 {
+			t.Skip()
+		}
+
 		c := encrypt(key, nonce, plaintext)
+
+		// check for decryption of authentic ciphertext
 		p2, err := decrypt(key, nonce, c)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if !bytes.Equal(plaintext, p2) {
 			t.Errorf("failed decryption. expected %v, got %v", plaintext, p2)
+		}
+
+		// check for non-decryption of inauthentic ciphertext
+		c[idx%len(c)] ^= mask
+		p3, err := decrypt(key, nonce, c)
+		if err == nil {
+			t.Errorf("failed decryption. expected error, got %v", p3)
 		}
 	})
 }
