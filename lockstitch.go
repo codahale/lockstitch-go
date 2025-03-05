@@ -400,10 +400,7 @@ const (
 )
 
 func aesCTR(key, nonce, dst, src []byte) {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		panic(err)
-	}
+	block, _ := aes.NewCipher(key)
 	cipher.NewCTR(block, nonce).XORKeyStream(dst, src)
 }
 
