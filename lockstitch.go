@@ -55,7 +55,7 @@ func (p *Protocol) Mix(label string, input []byte) {
 	//     opk = HMAC(state, 0x01 || left_encode(|label|) || label || input)
 	h := p.startOp(opMix, label)
 	h.Write(input)
-	opk := h.Sum(nil)
+	opk := h.Sum(p.state[:0])
 
 	// Extract a new state value from the protocol's old state and the operation key:
 	//

@@ -5,6 +5,15 @@ import (
 	"testing"
 )
 
+func BenchmarkMix(b *testing.B) {
+	p := NewProtocol("mix")
+	label := "label"
+	input := []byte("input")
+	for b.Loop() {
+		p.Mix(label, input)
+	}
+}
+
 func BenchmarkHash(b *testing.B) {
 	hash := func(message []byte) []byte {
 		protocol := NewProtocol("hash")
