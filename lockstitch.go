@@ -20,7 +20,7 @@ import (
 )
 
 // TagLen is the number of bytes added to the plaintext by the Seal operation.
-const TagLen = 16
+const TagLen = aes.BlockSize
 
 // ErrInvalidCiphertext is returned when the ciphertext is invalid or has been decrypted with the
 // wrong key.
@@ -299,22 +299,23 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	//     dek || dak = HMAC(state, 0x04 || left_encode(|label|) || label || left_encode(|plaintext|))
 	h := p.startOp(opAuthCrypt, label)
 	h.Write(leftEncode(uint64(len(plaintext)) * 8))
-	opk := h.Sum(nil)
-	dek, dak := opk[:16], opk[16:]
+	opk := h.Sum(p.state[:0])
+	block, _ := aes.NewCipher(opk[:16])
+	h2 := hmac.New(sha256.New, opk[16:])
 
 	// Use the DAK to extract a PRK from the plaintext with HMAC-SHA-256:
 	//
 	//     prk_0 || prk_1 = HMAC(dak, plaintext)
-	h2 := hmac.New(sha256.New, dak)
 	h2.Write(plaintext)
-	prk := h2.Sum(nil)
+	prk := h2.Sum(p.state[:0])
 	copy(tag, prk[:TagLen])
 
 	// Use the DEK and tag to encrypt the plaintext with AES-128, using the first 16 bytes of
 	// the PRK as the nonce:
 	//
 	//     ciphertext = AES-CTR(dek, prk_0, plaintext)
-	aesCTR(dek, tag, ciphertext, plaintext)
+	ctr := cipher.NewCTR(block, tag)
+	ctr.XORKeyStream(ciphertext, plaintext)
 
 	// Use the PRK to extract a new protocol state:
 	//
