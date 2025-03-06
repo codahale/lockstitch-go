@@ -2,10 +2,21 @@ package lockstitch
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/hex"
 	"io"
 	"testing"
 )
+
+func TestSalt(t *testing.T) {
+	h := hmac.New(sha256.New, nil)
+	h.Write([]byte("lockstitch"))
+	actual := h.Sum(nil)
+	if !bytes.Equal(actual, salt) {
+		t.Errorf("expected %v but was %v", actual, salt)
+	}
+}
 
 func TestClone(t *testing.T) {
 	p1 := NewProtocol("example")
