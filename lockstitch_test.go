@@ -7,6 +7,20 @@ import (
 	"testing"
 )
 
+func TestDeriveZeroOutputs(t *testing.T) {
+	zero := make([]byte, 10)
+	p1 := NewProtocol("example")
+	zeroed := p1.Derive("test", zero[:0], 10)
+
+	nonZero := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 0}
+	p2 := NewProtocol("example")
+	nonZeroed := p2.Derive("test", nonZero[:0], 10)
+
+	if !bytes.Equal(zeroed, nonZeroed) {
+		t.Errorf("expected %v but was %v", zeroed, nonZeroed)
+	}
+}
+
 func TestDeriveArgValidation(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
