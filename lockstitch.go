@@ -348,20 +348,21 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	//     dek || dak = HMAC(state, 0x04 || left_encode(|label|) || label || left_encode(|plaintext|))
 	h := p.startOp(opAuthCrypt, label)
 	h.Write(leftEncode(uint64(len(plaintext)) * 8))
-	opk := h.Sum(nil)
-	dek, dak := opk[:16], opk[16:]
+	opk := h.Sum(p.state[:0])
+	block, _ := aes.NewCipher(opk[:16])
+	h2 := hmac.New(sha256.New, opk[16:])
 
 	// Use the DEK and the tag to decrypt the plaintext with AES-128:
 	//
 	//     plaintext = AES-CTR(dek, tag, ciphertext)
-	aesCTR(dek, tag, plaintext, ciphertext)
+	cipher.NewCTR(block, tag).XORKeyStream(plaintext, ciphertext)
 
 	// Use the DAK to extract a PRK from the plaintext with HMAC-SHA-256:
 	//
 	//     prk_0 || prk_1 = HMAC(dak, plaintext)
 	h2 := hmac.New(sha256.New, dak)
 	h2.Write(plaintext)
-	prk := h2.Sum(opk[:0])
+	prk := h2.Sum(nil)
 
 	// Use the PRK to extract a new protocol state:
 	//
