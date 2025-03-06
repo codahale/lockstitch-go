@@ -7,6 +7,17 @@ import (
 	"testing"
 )
 
+func TestDeriveArgValidation(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("The code did not panic")
+		}
+	}()
+
+	p := NewProtocol("example")
+	p.Derive("test", nil, -200)
+}
+
 func TestKnownAnswers(t *testing.T) {
 	protocol := NewProtocol("com.example.kat")
 	protocol.Mix("first", []byte("one"))
