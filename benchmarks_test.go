@@ -23,6 +23,48 @@ func BenchmarkDerive(b *testing.B) {
 	}
 }
 
+func BenchmarkEncrypt(b *testing.B) {
+	p := NewProtocol("encrypt")
+	label := "label"
+	output := make([]byte, 32)
+	for b.Loop() {
+		p.Encrypt(label, output[:0], output)
+	}
+}
+
+func BenchmarkDecrypt(b *testing.B) {
+	p := NewProtocol("decrypt")
+	label := "label"
+	output := make([]byte, 32)
+	for b.Loop() {
+		p.Decrypt(label, output[:0], output)
+	}
+}
+
+func BenchmarkSeal(b *testing.B) {
+	p := NewProtocol("seal")
+	label := "label"
+	output := make([]byte, 32+TagLen)
+	for b.Loop() {
+		p.Seal(label, output[:0], output[:32])
+	}
+}
+
+func BenchmarkOpen(b *testing.B) {
+	label := "label"
+
+	output := make([]byte, 32)
+	p := NewProtocol("open")
+	ciphertext := p.Seal(label, nil, output)
+
+	for b.Loop() {
+		p := NewProtocol("open")
+		if _, err := p.Open(label, output[:0], ciphertext); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkHash(b *testing.B) {
 	hash := func(message []byte) []byte {
 		protocol := NewProtocol("hash")
