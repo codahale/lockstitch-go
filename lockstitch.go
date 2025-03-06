@@ -168,7 +168,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	//     opk = HMAC(state, 0x02 || left_encode(|label|) || label || left_encode(|out|))
 	h := p.startOp(opDerive, label)
 	h.Write(leftEncode(uint64(n) * 8))
-	opk := h.Sum(nil)
+	opk := h.Sum(p.state[:0])
 
 	// Use the PRK to encrypt all zeroes with AES:
 	//

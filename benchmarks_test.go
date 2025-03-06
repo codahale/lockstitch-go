@@ -14,6 +14,15 @@ func BenchmarkMix(b *testing.B) {
 	}
 }
 
+func BenchmarkDerive(b *testing.B) {
+	p := NewProtocol("derive")
+	label := "label"
+	output := make([]byte, 32)
+	for b.Loop() {
+		p.Derive(label, output[:0], len(output))
+	}
+}
+
 func BenchmarkHash(b *testing.B) {
 	hash := func(message []byte) []byte {
 		protocol := NewProtocol("hash")
