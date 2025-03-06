@@ -35,11 +35,7 @@ type Protocol struct {
 
 // NewProtocol creates a new Protocol with the given domain separation string.
 func NewProtocol(domain string) Protocol {
-	h := hmac.New(sha256.New, []byte{
-		// HMAC("", "lockstitch")
-		220, 87, 54, 63, 227, 165, 27, 245, 65, 144, 247, 188, 40, 15, 101, 174, 80, 197, 19, 248,
-		7, 216, 209, 168, 247, 171, 219, 147, 63, 135, 63, 1,
-	})
+	h := hmac.New(sha256.New, salt)
 	h.Write([]byte(domain))
 
 	return Protocol{
@@ -177,7 +173,8 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	for i := range out {
 		out[i] = 0
 	}
-	aesCTR(opk[:16], opk[16:], out, out)
+	block, _ := aes.NewCipher(opk[:16])
+	cipher.NewCTR(block, opk[16:]).XORKeyStream(out, out)
 
 	// Extract a new state value from the protocol's old state and the operation key:
 	//
@@ -221,8 +218,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	// Use the DEK to encrypt the plaintext with AES-128-CTR:
 	//
 	//     ciphertext = AES-CTR(dek, [0x00; 16], plaintext)
-	ctr := cipher.NewCTR(block, zeroIV)
-	ctr.XORKeyStream(ciphertext, plaintext)
+	cipher.NewCTR(block, zeroIV).XORKeyStream(ciphertext, plaintext)
 
 	// Extract a new state value from the protocol's old state and the PRK:
 	//
@@ -260,8 +256,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	// Use the DEK to decrypt the ciphertext with AES-128-CTR:
 	//
 	//     plaintext = AES-CTR(dek, [0x00; 16], ciphertext)
-	ctr := cipher.NewCTR(block, zeroIV)
-	ctr.XORKeyStream(plaintext, ciphertext)
+	cipher.NewCTR(block, zeroIV).XORKeyStream(plaintext, ciphertext)
 
 	// Use the DAK to extract a PRK from the plaintext with HMAC-SHA-256:
 	//
@@ -314,8 +309,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	// the PRK as the nonce:
 	//
 	//     ciphertext = AES-CTR(dek, prk_0, plaintext)
-	ctr := cipher.NewCTR(block, tag)
-	ctr.XORKeyStream(ciphertext, plaintext)
+	cipher.NewCTR(block, tag).XORKeyStream(ciphertext, plaintext)
 
 	// Use the PRK to extract a new protocol state:
 	//
@@ -360,7 +354,6 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	// Use the DAK to extract a PRK from the plaintext with HMAC-SHA-256:
 	//
 	//     prk_0 || prk_1 = HMAC(dak, plaintext)
-	h2 := hmac.New(sha256.New, dak)
 	h2.Write(plaintext)
 	prk := h2.Sum(nil)
 
@@ -396,7 +389,14 @@ func (p *Protocol) startOp(op byte, label string) hash.Hash {
 	return h
 }
 
-var zeroIV = make([]byte, aes.BlockSize)
+var (
+	zeroIV = make([]byte, aes.BlockSize)
+	salt   = []byte{
+		// HMAC("", "lockstitch")
+		220, 87, 54, 63, 227, 165, 27, 245, 65, 144, 247, 188, 40, 15, 101, 174, 80, 197, 19, 248,
+		7, 216, 209, 168, 247, 171, 219, 147, 63, 135, 63, 1,
+	}
+)
 
 const (
 	opMix       = 0x01
@@ -404,11 +404,6 @@ const (
 	opCrypt     = 0x03
 	opAuthCrypt = 0x04
 )
-
-func aesCTR(key, nonce, dst, src []byte) {
-	block, _ := aes.NewCipher(key)
-	cipher.NewCTR(block, nonce).XORKeyStream(dst, src)
-}
 
 // leftEncode encodes an integer value using NIST SP 800-185's left_encode.
 //
