@@ -7,6 +7,15 @@ import (
 	"testing"
 )
 
+func TestClone(t *testing.T) {
+	p1 := NewProtocol("example")
+	p2 := p1.Clone()
+
+	if !bytes.Equal(p1.state, p2.state) {
+		t.Errorf("expected %v but was %v", p1.state, p2.state)
+	}
+}
+
 func TestDeriveZeroOutputs(t *testing.T) {
 	zero := make([]byte, 10)
 	p1 := NewProtocol("example")
