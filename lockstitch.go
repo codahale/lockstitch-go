@@ -192,8 +192,6 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	return ret
 }
 
-var zeroIV = make([]byte, aes.BlockSize)
-
 // Encrypt encrypts the plaintext using the protocol's current state as the key, then ratchets the
 // protocol's state using the label and input. It appends the ciphertext to dst and returns the
 // resulting slice.
@@ -255,20 +253,21 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	//     dek || dak = HMAC(state, 0x03 || left_encode(|label|) || label || left_encode(|plaintext|))
 	h := p.startOp(opCrypt, label)
 	h.Write(leftEncode(uint64(len(ciphertext)) * 8))
-	opk := h.Sum(nil)
-	dek, dak := opk[:16], opk[16:]
+	opk := h.Sum(p.state[:0])
+	block, _ := aes.NewCipher(opk[:16])
+	h2 := hmac.New(sha256.New, opk[16:])
 
 	// Use the DEK to decrypt the ciphertext with AES-128-CTR:
 	//
 	//     plaintext = AES-CTR(dek, [0x00; 16], ciphertext)
-	aesCTR(dek, make([]byte, 16), plaintext, ciphertext)
+	ctr := cipher.NewCTR(block, zeroIV)
+	ctr.XORKeyStream(plaintext, ciphertext)
 
 	// Use the DAK to extract a PRK from the plaintext with HMAC-SHA-256:
 	//
 	//     prk = HMAC(dak, plaintext)
-	h2 := hmac.New(sha256.New, dak)
 	h2.Write(plaintext)
-	prk := h2.Sum(nil)
+	prk := h2.Sum(p.state[:0])
 
 	// Extract a new state value from the protocol's old state and the PRK:
 	//
@@ -394,6 +393,8 @@ func (p *Protocol) startOp(op byte, label string) hash.Hash {
 	h.Write([]byte(label))
 	return h
 }
+
+var zeroIV = make([]byte, aes.BlockSize)
 
 const (
 	opMix       = 0x01
