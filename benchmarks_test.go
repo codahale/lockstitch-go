@@ -5,6 +5,12 @@ import (
 	"testing"
 )
 
+func BenchmarkInit(b *testing.B) {
+	for b.Loop() {
+		NewProtocol("mix")
+	}
+}
+
 func BenchmarkMix(b *testing.B) {
 	p := NewProtocol("mix")
 	label := "label"
