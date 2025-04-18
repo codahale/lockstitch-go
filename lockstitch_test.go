@@ -10,38 +10,44 @@ import (
 )
 
 func TestSalt(t *testing.T) {
+	t.Parallel()
+
 	h := hmac.New(sha256.New, nil)
 	h.Write([]byte("lockstitch"))
-	actual := h.Sum(nil)
-	if !bytes.Equal(actual, salt) {
-		t.Errorf("expected %v but was %v", actual, salt)
+
+	if got, want := salt, h.Sum(nil); !bytes.Equal(got, want) {
+		t.Errorf("salt = %x, want = %x", got, want)
 	}
 }
 
 func TestClone(t *testing.T) {
+	t.Parallel()
+
 	p1 := NewProtocol("example")
 	p2 := p1.Clone()
 
-	if !bytes.Equal(p1.state, p2.state) {
-		t.Errorf("expected %v but was %v", p1.state, p2.state)
+	if got, want := p2.state, p1.state; !bytes.Equal(got, want) {
+		t.Errorf("Clone(state) = %x, want = %x", got, want)
 	}
 }
 
 func TestDeriveZeroOutputs(t *testing.T) {
+	t.Parallel()
+
 	zero := make([]byte, 10)
-	p1 := NewProtocol("example")
-	zeroed := p1.Derive("test", zero[:0], 10)
-
 	nonZero := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 0}
-	p2 := NewProtocol("example")
-	nonZeroed := p2.Derive("test", nonZero[:0], 10)
 
-	if !bytes.Equal(zeroed, nonZeroed) {
-		t.Errorf("expected %v but was %v", zeroed, nonZeroed)
+	p1 := NewProtocol("example")
+	p2 := NewProtocol("example")
+
+	if got, want := p1.Derive("test", nonZero[:0], 10), p2.Derive("test", zero[:0], 10); !bytes.Equal(got, want) {
+		t.Errorf("Derive(nonZero) = %x, want = %x", got, want)
 	}
 }
 
 func TestDeriveArgValidation(t *testing.T) {
+	t.Parallel()
+
 	defer func() {
 		if r := recover(); r == nil {
 			t.Errorf("The code did not panic")
@@ -53,61 +59,66 @@ func TestDeriveArgValidation(t *testing.T) {
 }
 
 func TestKnownAnswers(t *testing.T) {
+	t.Parallel()
+
 	protocol := NewProtocol("com.example.kat")
 	protocol.Mix("first", []byte("one"))
 	protocol.Mix("second", []byte("two"))
 
-	if expected, actual := "f30a3c4582cf74b5", hex.EncodeToString(protocol.Derive("third", nil, 8)); expected != actual {
-		t.Errorf("Derive output mismatch, expected %v, got %v", expected, actual)
+	if got, want := hex.EncodeToString(protocol.Derive("third", nil, 8)), "f30a3c4582cf74b5"; got != want {
+		t.Errorf("Derive('third') = %v, want = %v", got, want)
 	}
 
 	plaintext := []byte("this is an example")
 	ciphertext := protocol.Encrypt("fourth", nil, plaintext)
-	if expected, actual := "cbc0743dbcd23d85d16221fc94ae677d29d9", hex.EncodeToString(ciphertext); expected != actual {
-		t.Errorf("Encrypt output mismatch, expected %v, got %v", expected, actual)
+	if got, want := hex.EncodeToString(ciphertext), "cbc0743dbcd23d85d16221fc94ae677d29d9"; got != want {
+		t.Errorf("Encrypt('fourth') = %v, want = %v", got, want)
 	}
 
 	ciphertext = protocol.Seal("fifth", nil, []byte("this is an example"))
-	if expected, actual := "b965f961fb66a2e03287c1517e6ae3d1fb273e136cafca4382f78752f19717571087", hex.EncodeToString(ciphertext); expected != actual {
-		t.Errorf("Seal output mismatch, expected %v, got %v", expected, actual)
+	if got, want := hex.EncodeToString(ciphertext), "b965f961fb66a2e03287c1517e6ae3d1fb273e136cafca4382f78752f19717571087"; got != want {
+		t.Errorf("Seal('fifth') = %v, want = %v", got, want)
 	}
 
-	if expected, actual := "e11c63100f03f2bb", hex.EncodeToString(protocol.Derive("sixth", nil, 8)); expected != actual {
-		t.Errorf("DeriveSlice output mismatch, expected %v, got %v", expected, actual)
+	if got, want := hex.EncodeToString(protocol.Derive("sixth", nil, 8)), "e11c63100f03f2bb"; got != want {
+		t.Errorf("Derive('sixth') = %v, want = %v", got, want)
 	}
 }
 
 func TestLeftEncode(t *testing.T) {
-	if expected, actual := []byte{1, 0}, leftEncode(0); !bytes.Equal(expected, actual) {
-		t.Errorf("expected %v, got %v", expected, actual)
+	t.Parallel()
+
+	if got, want := leftEncode(0), []byte{1, 0}; !bytes.Equal(got, want) {
+		t.Errorf("leftEncode(0) = %v, want = %v", got, want)
 	}
 
-	if expected, actual := []byte{1, 128}, leftEncode(128); !bytes.Equal(expected, actual) {
-		t.Errorf("expected %v, got %v", expected, actual)
+	if got, want := leftEncode(128), []byte{1, 128}; !bytes.Equal(got, want) {
+		t.Errorf("leftEncode(128) = %v, want = %v", got, want)
 	}
 
-	if expected, actual := []byte{3, 1, 0, 0}, leftEncode(65536); !bytes.Equal(expected, actual) {
-		t.Errorf("expected %v, got %v", expected, actual)
+	if got, want := leftEncode(65536), []byte{3, 1, 0, 0}; !bytes.Equal(got, want) {
+		t.Errorf("leftEncode(65536) = %v, want = %v", got, want)
 	}
 
-	if expected, actual := []byte{2, 16, 0}, leftEncode(4096); !bytes.Equal(expected, actual) {
-		t.Errorf("expected %v, got %v", expected, actual)
+	if got, want := leftEncode(4096), []byte{2, 16, 0}; !bytes.Equal(got, want) {
+		t.Errorf("leftEncode(4096) = %v, want = %v", got, want)
 	}
 
-	if expected, actual := []byte{8, 255, 255, 255, 255, 255, 255, 255, 255}, leftEncode(18446744073709551615); !bytes.Equal(expected, actual) {
-		t.Errorf("expected %v, got %v", expected, actual)
+	if got, want := leftEncode(18446744073709551615), []byte{8, 255, 255, 255, 255, 255, 255, 255, 255}; !bytes.Equal(got, want) {
+		t.Errorf("leftEncode(18446744073709551615) = %v, want = %v", got, want)
 	}
 
-	if expected, actual := []byte{2, 48, 57}, leftEncode(12345); !bytes.Equal(expected, actual) {
-		t.Errorf("expected %v, got %v", expected, actual)
+	if got, want := leftEncode(12345), []byte{2, 48, 57}; !bytes.Equal(got, want) {
+		t.Errorf("leftEncode(12345) = %v, want = %v", got, want)
 	}
 }
 
 func TestMixAndMixWriter(t *testing.T) {
+	t.Parallel()
+
 	a := NewProtocol("test")
 	a.Mix("one", []byte("111"))
 	a.Mix("two", []byte("222"))
-	ad := a.Derive("three", nil, 8)
 
 	b := NewProtocol("test")
 
@@ -119,8 +130,8 @@ func TestMixAndMixWriter(t *testing.T) {
 	if err := w1.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if expected, actual := []byte("111"), b1.Bytes(); !bytes.Equal(expected, actual) {
-		t.Errorf("expected write of %v but was %v", expected, actual)
+	if got, want := b1.Bytes(), []byte("111"); !bytes.Equal(got, want) {
+		t.Errorf("Write('111') = %v, want = %v", got, want)
 	}
 	b2 := new(bytes.Buffer)
 	w2 := b.MixWriter("two", b2)
@@ -130,22 +141,21 @@ func TestMixAndMixWriter(t *testing.T) {
 	if err := w2.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if expected, actual := []byte("222"), b2.Bytes(); !bytes.Equal(expected, actual) {
-		t.Errorf("expected write of %v but was %v", expected, actual)
+	if got, want := b2.Bytes(), []byte("222"); !bytes.Equal(got, want) {
+		t.Errorf("Write('222') = %v, want = %v", got, want)
 	}
 
-	bd := b.Derive("three", nil, 8)
-
-	if !bytes.Equal(ad, bd) {
-		t.Errorf("expected %v but was %v", ad, bd)
+	if got, want := a.Derive("three", nil, 8), b.Derive("three", nil, 8); !bytes.Equal(got, want) {
+		t.Errorf("Derive('three') = %x, want = %x", got, want)
 	}
 }
 
 func TestMixAndMixReader(t *testing.T) {
+	t.Parallel()
+
 	a := NewProtocol("test")
 	a.Mix("one", []byte("111"))
 	a.Mix("two", []byte("222"))
-	ad := a.Derive("three", nil, 8)
 
 	b := NewProtocol("test")
 	r1 := b.MixReader("one", bytes.NewReader([]byte("111")))
@@ -156,8 +166,8 @@ func TestMixAndMixReader(t *testing.T) {
 	if err := r1.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if expected, actual := []byte("111"), b1.Bytes(); !bytes.Equal(expected, actual) {
-		t.Errorf("expected write of %v but was %v", expected, actual)
+	if got, want := b1.Bytes(), []byte("111"); !bytes.Equal(got, want) {
+		t.Errorf("Write('111') = %v, want = %v", got, want)
 	}
 
 	r2 := b.MixReader("two", bytes.NewReader([]byte("222")))
@@ -168,14 +178,12 @@ func TestMixAndMixReader(t *testing.T) {
 	if err := r2.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if expected, actual := []byte("222"), b2.Bytes(); !bytes.Equal(expected, actual) {
-		t.Errorf("expected write of %v but was %v", expected, actual)
+	if got, want := b2.Bytes(), []byte("222"); !bytes.Equal(got, want) {
+		t.Errorf("Write('222') = %v, want = %v", got, want)
 	}
 
-	bd := b.Derive("three", nil, 8)
-
-	if !bytes.Equal(ad, bd) {
-		t.Errorf("expected %v but was %v", ad, bd)
+	if got, want := a.Derive("three", nil, 8), b.Derive("three", nil, 8); !bytes.Equal(got, want) {
+		t.Errorf("Derive('three') = %x, want = %x", got, want)
 	}
 }
 
@@ -186,9 +194,9 @@ func FuzzLeftEncode(f *testing.F) {
 		bb := leftEncode(b)
 
 		if a == b && !bytes.Equal(ab, bb) {
-			t.Errorf("%v encoded to both %v and %v", a, ab, bb)
+			t.Errorf("leftEncode(%v) = %v, leftEncode(%v) = %v", a, ab, b, bb)
 		} else if a != b && bytes.Equal(ab, bb) {
-			t.Errorf("%v and %v both encoded to %v", a, b, ab)
+			t.Errorf("leftEncode(%v) = leftEncode(%v) = %v", a, b, ab)
 		}
 	})
 }

@@ -23,9 +23,8 @@ func FuzzStream(f *testing.F) {
 	f.Add([]byte("yellow submarine"), []byte("12345678"), []byte("hello world"))
 	f.Fuzz(func(t *testing.T, key []byte, nonce []byte, message []byte) {
 		ciphertext := encrypt(key, nonce, message)
-		actual := decrypt(key, nonce, ciphertext)
-		if !bytes.Equal(message, actual) {
-			t.Errorf("failed decryption. expected %v, got %v", message, actual)
+		if got, want := decrypt(key, nonce, ciphertext), message; !bytes.Equal(got, want) {
+			t.Errorf("decrypt(key, nonce, ciphertext) = %v, want = %v", got, want)
 		}
 	})
 }
@@ -58,15 +57,15 @@ func FuzzAEAD(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !bytes.Equal(plaintext, p2) {
-			t.Errorf("failed decryption. expected %v, got %v", plaintext, p2)
+		if got, want := p2, plaintext; !bytes.Equal(got, want) {
+			t.Errorf("decrypt(key, nonce, c) = %v, want = %v", got, want)
 		}
 
 		// check for non-decryption of inauthentic ciphertext
 		c[idx%len(c)] ^= mask
-		p3, err := decrypt(key, nonce, c)
-		if err == nil {
-			t.Errorf("failed decryption. expected error, got %v", p3)
+
+		if got, err := decrypt(key, nonce, c); err == nil {
+			t.Errorf("decrypt(key, nonce, c) = %v, want = nil", got)
 		}
 	})
 }
