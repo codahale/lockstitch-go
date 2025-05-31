@@ -1,10 +1,9 @@
-// Package lockstitch provides an incremental, stateful cryptographic primitive for symmetric-key
-// cryptographic operations (e.g. hashing, encryption, message authentication codes, and
-// authenticated encryption) in complex protocols. Inspired by TupleHash, STROBE, Noise Protocol's
-// stateful objects, Merlin transcripts, and Xoodyak's Cyclist mode, Lockstitch uses SHA-256
-// (https://doi.org/10.6028/NIST.FIPS.180-4) and AES-128
-// (https://doi.org/10.6028/NIST.FIPS.197-upd1) to provide 10+ Gb/sec performance on modern
-// processors at a 128-bit security level.
+// Package lockstitch provides an incremental, stateful cryptographic primitive for symmetric-key cryptographic
+// operations (e.g., hashing, encryption, message authentication codes, and authenticated encryption) in complex
+// protocols. Inspired by TupleHash, STROBE, Noise Protocol's stateful objects, Merlin transcripts, and Xoodyak's
+// Cyclist mode, Lockstitch uses SHA-256 (https://doi.org/10.6028/NIST.FIPS.180-4) and AES-128
+// (https://doi.org/10.6028/NIST.FIPS.197-upd1) to provide 10+ Gb/sec performance on modern processors at a 128-bit
+// security level.
 package lockstitch
 
 import (
@@ -26,9 +25,8 @@ const TagLen = aes.BlockSize
 // wrong key.
 var ErrInvalidCiphertext = errors.New("lockstitch: invalid ciphertext")
 
-// A Protocol is a stateful object providing fine-grained symmetric-key cryptographic services like
-// hashing, message authentication codes, pseudo-random functions, authenticated encryption, and
-// more.
+// A Protocol is a stateful object providing fine-grained symmetric-key cryptographic services like hashing, message
+// authentication codes, pseudo-random functions, authenticated encryption, and more.
 type Protocol struct {
 	state []byte
 }
@@ -45,8 +43,8 @@ func NewProtocol(domain string) Protocol {
 
 // Mix ratchets the protocol's state using the given label and input.
 func (p *Protocol) Mix(label string, input []byte) {
-	// Extract an operation key from the protocol's state, the operation code, the label, and the
-	// input, using an unambiguous encoding to prevent collisions:
+	// Extract an operation key from the protocol's state, the operation code, the label, and the input, using an
+	// unambiguous encoding to prevent collisions:
 	//
 	//     opk = HMAC(state, 0x01 || left_encode(|label|) || label || input)
 	h := p.startOp(opMix, label)
@@ -57,20 +55,18 @@ func (p *Protocol) Mix(label string, input []byte) {
 	//
 	//     state' = HMAC(state, opk)
 	//
-	// This preserves the invariant that the protocol state is the HMAC output of two uniform
-	// random keys.
+	// This preserves the invariant that the protocol state is the HMAC output of two uniform random keys.
 	h.Reset()
 	h.Write(opk)
 	p.state = h.Sum(p.state[:0])
 }
 
-// MixReader initiates a Mix operation with the given label and returns a ReadCloser wrapping the
-// given Reader. All data read from the WriteCloser will be read from the underlying reader and used
-// in the Mix operation.  When Close() is called on the ReadCloser, the Mix operation is completed
-// and the Protocol's state is updated.
+// MixReader initiates a Mix operation with the given label and returns a ReadCloser wrapping the given Reader. All data
+// read from the WriteCloser will be read from the underlying reader and used in the Mix operation.  When Close() is
+// called on the ReadCloser, the Mix operation is completed and the Protocol's state is updated.
 func (p *Protocol) MixReader(label string, r io.Reader) io.ReadCloser {
-	// Extract an operation key from the protocol's state, the operation code, the label, and the
-	// input, using an unambiguous encoding to prevent collisions:
+	// Extract an operation key from the protocol's state, the operation code, the label, and the input, using an
+	// unambiguous encoding to prevent collisions:
 	//
 	//     opk = HMAC(state, 0x01 || left_encode(|label|) || label || input)
 	h := p.startOp(opMix, label)
@@ -101,8 +97,7 @@ func (r *mixReader) Close() error {
 	//
 	//     state' = HMAC(state, opk)
 	//
-	// This preserves the invariant that the protocol state is the HMAC output of two uniform
-	// random keys.
+	// This preserves the invariant that the protocol state is the HMAC output of two uniform random keys.
 	r.h.Reset()
 	r.h.Write(opk)
 	r.p.state = r.h.Sum(r.p.state[:0])
@@ -110,13 +105,12 @@ func (r *mixReader) Close() error {
 	return nil
 }
 
-// MixWriter initiates a Mix operation with the given label and returns a WriteCloser wrapping the
-// given Writer. All data written to the WriteCloser will be used in the Mix operation as well as
-// written to the underlying writer. When Close() is called on the WriteCloser, the Mix operation is
-// completed and the Protocol's state is updated.
+// MixWriter initiates a Mix operation with the given label and returns a WriteCloser wrapping the given Writer. All
+// data written to the WriteCloser will be used in the Mix operation as well as written to the underlying writer. When
+// Close() is called on the WriteCloser, the Mix operation is completed and the Protocol's state is updated.
 func (p *Protocol) MixWriter(label string, w io.Writer) io.WriteCloser {
-	// Extract an operation key from the protocol's state, the operation code, the label, and the
-	// input, using an unambiguous encoding to prevent collisions:
+	// Extract an operation key from the protocol's state, the operation code, the label, and the input, using an
+	// unambiguous encoding to prevent collisions:
 	//
 	//     opk = HMAC(state, 0x01 || left_encode(|label|) || label || input)
 	h := p.startOp(opMix, label)
@@ -141,8 +135,7 @@ func (w *mixWriter) Close() error {
 	//
 	//     state' = HMAC(state, opk)
 	//
-	// This preserves the invariant that the protocol state is the HMAC output of two uniform
-	// random keys.
+	// This preserves the invariant that the protocol state is the HMAC output of two uniform random keys.
 	w.h.Reset()
 	w.h.Write(opk)
 	w.p.state = w.h.Sum(w.p.state[:0])
@@ -150,16 +143,16 @@ func (w *mixWriter) Close() error {
 	return nil
 }
 
-// Derive generates pseudorandom output from the Protocol's current state, the label, and the output
-// length, then ratchets the Protocol's state with the label and output length. It appends the
-// output to dst and returns the resulting slice.
+// Derive generates pseudorandom output from the Protocol's current state, the label, and the output length, then
+// ratchets the Protocol's state with the label and output length. It appends the output to dst and returns the
+// resulting slice.
 func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	if n < 0 {
 		panic("invalid argument to Derive: n cannot be negative")
 	}
 
-	// Extract an operation key from the protocol's state, the operation code, the label, and the
-	// output length, using an unambiguous encoding to prevent collisions:
+	// Extract an operation key from the protocol's state, the operation code, the label, and the output length, using an
+	// unambiguous encoding to prevent collisions:
 	//
 	//     opk = HMAC(state, 0x02 || left_encode(|label|) || label || left_encode(|out|))
 	h := p.startOp(opDerive, label)
@@ -180,8 +173,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	//
 	//     state' = HMAC(state, opk)
 	//
-	// This preserves the invariant that the protocol state is the HMAC output of two uniform
-	// random keys.
+	// This preserves the invariant that the protocol state is the HMAC output of two uniform random keys.
 	h.Reset()
 	h.Write(opk)
 	p.state = h.Sum(p.state[:0])
@@ -189,18 +181,16 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	return ret
 }
 
-// Encrypt encrypts the plaintext using the protocol's current state as the key, then ratchets the
-// protocol's state using the label and input. It appends the ciphertext to dst and returns the
-// resulting slice.
+// Encrypt encrypts the plaintext using the protocol's current state as the key, then ratchets the protocol's state
+// using the label and input. It appends the ciphertext to dst and returns the resulting slice.
 //
-// To reuse plaintext's storage for the encrypted output, use plaintext[:0] as dst. Otherwise, the
-// remaining capacity of dst must not overlap plaintext.
+// To reuse plaintext's storage for the encrypted output, use plaintext[:0] as dst. Otherwise, the remaining capacity of
+// dst must not overlap plaintext.
 func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	ret, ciphertext := sliceForAppend(dst, len(plaintext))
 
-	// Extract a data encryption key and data authentication key from the protocol's state, the
-	// operation code, the label, and the output length, using an unambiguous encoding to
-	// prevent collisions:
+	// Extract a data encryption key and data authentication key from the protocol's state, the operation code, the label,
+	// and the output length, using an unambiguous encoding to prevent collisions:
 	//
 	//     dek || dak = HMAC(state, 0x03 || left_encode(|label|) || label || left_encode(|plaintext|))
 	h := p.startOp(opCrypt, label)
@@ -224,8 +214,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	//
 	//     state' = HMAC(state, prk)
 	//
-	// This preserves the invariant that the protocol state is the HMAC output of two uniform
-	// random keys.
+	// This preserves the invariant that the protocol state is the HMAC output of two uniform random keys.
 	h.Reset()
 	h.Write(prk)
 	p.state = h.Sum(p.state[:0])
@@ -233,18 +222,15 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	return ret
 }
 
-// Decrypt decrypts the given ciphertext using the protocol's current state as the key, then
-// ratchets the protocol's state using the label and input. It appends the plaintext to dst and
-// returns the resulting slice.
-//
-// To reuse ciphertext's storage for the decrypted output, use ciphertext[:0] as dst. Otherwise, the
-// remaining capacity of dst must not overlap ciphertext.
+// Decrypt decrypts the given ciphertext using the protocol's current state as the key, then ratchets the protocol's
+// state using the label and input. It appends the plaintext to dst and returns the resulting slice. To reuse
+// ciphertext's storage for the decrypted output, use ciphertext[:0] as dst. Otherwise, the remaining capacity of dst
+// must not overlap ciphertext.
 func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	ret, plaintext := sliceForAppend(dst, len(ciphertext))
 
-	// Extract a data encryption key and data authentication key from the protocol's state, the
-	// operation code, the label, and the output length, using an unambiguous encoding to
-	// prevent collisions:
+	// Extract a data encryption key and data authentication key from the protocol's state, the operation code, the label,
+	// and the output length, using an unambiguous encoding to prevent collisions:
 	//
 	//     dek || dak = HMAC(state, 0x03 || left_encode(|label|) || label || left_encode(|plaintext|))
 	h := p.startOp(opCrypt, label)
@@ -268,8 +254,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	//
 	//     state′ = HMAC(state, prk)
 	//
-	// This preserves the invariant that the protocol state is the HMAC output of two uniform
-	// random keys.
+	// This preserves the invariant that the protocol state is the HMAC output of two uniform random keys.
 	h.Reset()
 	h.Write(prk)
 	p.state = h.Sum(p.state[:0])
@@ -277,19 +262,18 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	return ret
 }
 
-// Encrypts the given plaintext using the protocol's current state as the key, appending an
-// authentication tag of TagLen bytes, then ratchets the protocol's state using the label and input.
-// It appends the ciphertext and authentication tag to dst and returns the resulting slice.
+// Seal encrypts the given plaintext using the protocol's current state as the key, appending an authentication tag of
+// TagLen bytes, then ratchets the protocol's state using the label and input. It appends the ciphertext and
+// authentication tag to dst and returns the resulting slice.
 //
-// To reuse plaintext's storage for the encrypted output, use plaintext[:0] as dst. Otherwise, the
-// remaining capacity of dst must not overlap plaintext.
+// To reuse plaintext's storage for the encrypted output, use plaintext[:0] as dst. Otherwise, the remaining capacity of
+// dst must not overlap plaintext.
 func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	ret, out := sliceForAppend(dst, len(plaintext)+TagLen)
 	ciphertext, tag := out[:len(plaintext)], out[len(plaintext):]
 
-	// Extract a data encryption key and data authentication key from the protocol's state, the
-	// operation code, the label, and the output length, using an unambiguous encoding to
-	// prevent collisions:
+	// Extract a data encryption key and data authentication key from the protocol's state, the operation code, the label,
+	// and the output length, using an unambiguous encoding to prevent collisions:
 	//
 	//     dek || dak = HMAC(state, 0x04 || left_encode(|label|) || label || left_encode(|plaintext|))
 	h := p.startOp(opAuthCrypt, label)
@@ -313,10 +297,9 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 
 	// Use the PRK to extract a new protocol state:
 	//
-	//     state' = HMAC(state, prk_0 || prk_1)
+	//     state′ = HMAC(state, prk_0 || prk_1)
 	//
-	// This preserves the invariant that the protocol state is the HMAC output of two uniform
-	// random keys.
+	// This preserves the invariant that the protocol state is the HMAC output of two uniform random keys.
 	h.Reset()
 	h.Write(prk)
 	p.state = h.Sum(p.state[:0])
@@ -324,20 +307,19 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	return ret
 }
 
-// Open decrypts the given slice in place using the protocol's current state as the key, verifying
-// the final TagLen bytes as an authentication tag, then ratchets the protocol's state using the
-// label and input. If the ciphertext is authentic, it appends the plaintext to dst and returns the
-// resulting slice; otherwise, ErrInvalidCiphertext is returned.
+// Open decrypts the given slice in place using the protocol's current state as the key, verifying the final TagLen
+// bytes as an authentication tag, then ratchets the protocol's state using the label and input. If the ciphertext is
+// authentic, it appends the plaintext to dst and returns the resulting slice; otherwise, ErrInvalidCiphertext is
+// returned.
 //
-// To reuse ciphertext's storage for the decrypted output, use ciphertext[:0] as dst. Otherwise, the
-// remaining capacity of dst must not overlap ciphertext.
+// To reuse ciphertext's storage for the decrypted output, use ciphertext[:0] as dst. Otherwise, the remaining capacity
+// of dst must not overlap ciphertext.
 func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	ret, plaintext := sliceForAppend(dst, len(ciphertext)-TagLen)
 	ciphertext, tag := ciphertext[:len(ciphertext)-TagLen], ciphertext[len(ciphertext)-TagLen:]
 
-	// Extract a data encryption key and data authentication key from the protocol's state, the
-	// operation code, the label, and the output length, using an unambiguous encoding to
-	// prevent collisions:
+	// Extract a data encryption key and data authentication key from the protocol's state, the operation code, the label,
+	// and the output length, using an unambiguous encoding to prevent collisions:
 	//
 	//     dek || dak = HMAC(state, 0x04 || left_encode(|label|) || label || left_encode(|plaintext|))
 	h := p.startOp(opAuthCrypt, label)
@@ -359,10 +341,9 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 
 	// Use the PRK to extract a new protocol state:
 	//
-	//     state' = HMAC(state, prk_0 || prk_1)
+	//     state′ = HMAC(state, prk_0 || prk_1)
 	//
-	// This preserves the invariant that the protocol state is the HMAC output of two uniform
-	// random keys.
+	// This preserves the invariant that the protocol state is the HMAC output of two uniform random keys.
 	h.Reset()
 	h.Write(prk)
 	p.state = h.Sum(p.state[:0])
@@ -416,10 +397,9 @@ func leftEncode(value uint64) []byte {
 	return buf[len(buf)-n-1:]
 }
 
-// sliceForAppend takes a slice and a requested number of bytes. It returns a
-// slice with the contents of the given slice followed by that many bytes and a
-// second slice that aliases into it and contains only the extra bytes. If the
-// original slice has sufficient capacity then no allocation is performed.
+// sliceForAppend takes a slice and a requested number of bytes. It returns a slice with the contents of the given slice
+// followed by that many bytes and a second slice that aliases into it and contains only the extra bytes. If the
+// original slice has sufficient capacity, then no allocation is performed.
 func sliceForAppend(in []byte, n int) (head, tail []byte) {
 	if total := len(in) + n; cap(in) >= total {
 		head = in[:total]
