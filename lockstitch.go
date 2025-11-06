@@ -46,11 +46,7 @@ func NewProtocol(domain string) Protocol {
 // Mix ratchets the protocol's state using the given label and input.
 func (p *Protocol) Mix(label string, input []byte) {
 	// Append the operation metadata and input to the transcript in a recoverable encoding.
-	_, _ = p.transcript.Write([]byte{opMix})
-	_, _ = p.transcript.Write(leftEncode(uint64(len(label)) * 8))
-	_, _ = p.transcript.Write([]byte(label))
-	_, _ = p.transcript.Write(leftEncode(uint64(len(input)) * 8))
-	_, _ = p.transcript.Write(input)
+	p.combine(opMix, []byte(label), input)
 }
 
 // Derive generates pseudorandom output from the Protocol's current state, the label, and the output length, then
@@ -62,20 +58,15 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	}
 
 	// Append the operation metadata to the transcript in a recoverable encoding.
-	_, _ = p.transcript.Write([]byte{opDerive})
-	_, _ = p.transcript.Write(leftEncode(uint64(len(label)) * 8))
-	_, _ = p.transcript.Write([]byte(label))
-	_, _ = p.transcript.Write(leftEncode(uint64(n) * 8))
+	p.combine(opDerive, []byte(label), leftEncode(uint64(n)*8))
 
 	// Expand a ratchet key and n bytes of PRF output from the transcript.
 	var rak [32]byte
 	ret, prf := sliceForAppend(dst, n)
-	_, _ = p.transcript.Write(rightEncode(uint64(len(rak)+n) * 8))
-	_, _ = p.transcript.Read(rak[:])
-	_, _ = p.transcript.Read(prf)
+	p.expand(rak[:], prf)
 
 	// Ratchet the transcript with the ratchet key.
-	p.ratchet(rak[:])
+	p.combine(opRatchet, rak[:])
 
 	return ret
 }
@@ -87,10 +78,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 // dst must not overlap plaintext.
 func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	// Append the operation metadata to the transcript.
-	_, _ = p.transcript.Write([]byte{opCrypt})
-	_, _ = p.transcript.Write(leftEncode(uint64(len(label)) * 8))
-	_, _ = p.transcript.Write([]byte(label))
-	_, _ = p.transcript.Write(leftEncode(uint64(len(plaintext)) * 8))
+	p.combine(opCrypt, []byte(label), leftEncode(uint64(len(plaintext))*8))
 
 	// Expand a ratchet key, a data encryption key, and a data authentication key from the transcript.
 	var (
@@ -98,10 +86,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 		dek [16]byte
 		dak [32]byte
 	)
-	_, _ = p.transcript.Write(rightEncode(uint64(len(rak)+len(dek)+len(dak)) * 8))
-	_, _ = p.transcript.Read(rak[:])
-	_, _ = p.transcript.Read(dek[:])
-	_, _ = p.transcript.Read(dak[:])
+	p.expand(rak[:], dek[:], dak[:])
 
 	// Calculate a Poly1305 authenticator of the plaintext.
 	m := poly1305.New(&dak)
@@ -109,7 +94,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	auth := m.Sum(dak[:0])
 
 	// Ratchet the transcript with the ratchet key and the authenticator.
-	p.ratchet(append(rak[:], auth...))
+	p.combine(opRatchet, rak[:], auth)
 
 	// Encrypt the plaintext using AES-128-CTR with an all-zero IV.
 	ret, ciphertext := sliceForAppend(dst, len(plaintext))
@@ -126,10 +111,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 // must not overlap ciphertext.
 func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	// Append the operation metadata to the transcript.
-	_, _ = p.transcript.Write([]byte{opCrypt})
-	_, _ = p.transcript.Write(leftEncode(uint64(len(label)) * 8))
-	_, _ = p.transcript.Write([]byte(label))
-	_, _ = p.transcript.Write(leftEncode(uint64(len(ciphertext)) * 8))
+	p.combine(opCrypt, []byte(label), leftEncode(uint64(len(ciphertext))*8))
 
 	// Expand a ratchet key, a data encryption key, and a data authentication key from the transcript.
 	var (
@@ -137,10 +119,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 		dek [16]byte
 		dak [32]byte
 	)
-	_, _ = p.transcript.Write(rightEncode(uint64(len(rak)+len(dek)+len(dak)) * 8))
-	_, _ = p.transcript.Read(rak[:])
-	_, _ = p.transcript.Read(dek[:])
-	_, _ = p.transcript.Read(dak[:])
+	p.expand(rak[:], dek[:], dak[:])
 
 	// Decrypt the ciphertext using AES-128-CTR with an all-zero IV.
 	ret, plaintext := sliceForAppend(dst, len(ciphertext))
@@ -154,7 +133,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	auth := m.Sum(dak[:0])
 
 	// Ratchet the transcript with the ratchet key and the authenticator.
-	p.ratchet(append(rak[:], auth...))
+	p.combine(opRatchet, rak[:], auth)
 
 	return ret
 }
@@ -170,10 +149,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	ciphertext, tag := ciphertext[:len(plaintext)], ciphertext[len(plaintext):]
 
 	// Append the operation metadata to the transcript.
-	_, _ = p.transcript.Write([]byte{opAuthCrypt})
-	_, _ = p.transcript.Write(leftEncode(uint64(len(label)) * 8))
-	_, _ = p.transcript.Write([]byte(label))
-	_, _ = p.transcript.Write(leftEncode(uint64(len(plaintext)) * 8))
+	p.combine(opAuthCrypt, []byte(label), leftEncode(uint64(len(plaintext))*8))
 
 	// Expand a ratchet key, a data encryption key, and a data authentication key from the transcript.
 	var (
@@ -181,10 +157,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 		dek [16]byte
 		dak [32]byte
 	)
-	_, _ = p.transcript.Write(rightEncode(uint64(len(rak)+len(dek)+len(dak)) * 8))
-	_, _ = p.transcript.Read(rak[:])
-	_, _ = p.transcript.Read(dek[:])
-	_, _ = p.transcript.Read(dak[:])
+	p.expand(rak[:], dek[:], dak[:])
 
 	// Calculate a Poly1305 authenticator of the plaintext.
 	m := poly1305.New(&dak)
@@ -192,12 +165,10 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	auth := m.Sum(dak[:0])
 
 	// Ratchet the transcript with the ratchet key and the authenticator.
-	p.ratchet(append(rak[:], auth...))
+	p.combine(opRatchet, rak[:], auth)
 
 	// Expand a ratchet key and an authentication tag.
-	_, _ = p.transcript.Write(rightEncode(uint64(len(rak)+len(tag)) * 8))
-	_, _ = p.transcript.Read(rak[:])
-	_, _ = p.transcript.Read(tag)
+	p.expand(rak[:], tag)
 
 	// Encrypt the plaintext using AES-128-CTR with the tag as the IV.
 	block, _ := aes.NewCipher(dek[:])
@@ -205,7 +176,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	ctr.XORKeyStream(ciphertext, plaintext)
 
 	// Ratchet the transcript with the ratchet key.
-	p.ratchet(rak[:])
+	p.combine(opRatchet, rak[:])
 
 	return ret
 }
@@ -221,10 +192,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	ret, plaintext := sliceForAppend(dst, len(ciphertext))
 
 	// Append the operation metadata to the transcript.
-	_, _ = p.transcript.Write([]byte{opAuthCrypt})
-	_, _ = p.transcript.Write(leftEncode(uint64(len(label)) * 8))
-	_, _ = p.transcript.Write([]byte(label))
-	_, _ = p.transcript.Write(leftEncode(uint64(len(ciphertext)) * 8))
+	p.combine(opAuthCrypt, []byte(label), leftEncode(uint64(len(ciphertext))*8))
 
 	// Expand a ratchet key, a data encryption key, and a data authentication key from the transcript.
 	var (
@@ -232,10 +200,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 		dek [16]byte
 		dak [32]byte
 	)
-	_, _ = p.transcript.Write(rightEncode(uint64(len(rak)+len(dek)+len(dak)) * 8))
-	_, _ = p.transcript.Read(rak[:])
-	_, _ = p.transcript.Read(dek[:])
-	_, _ = p.transcript.Read(dak[:])
+	p.expand(rak[:], dek[:], dak[:])
 
 	// Decrypt the plaintext using AES-128-CTR and using the tag as the IV.
 	block, _ := aes.NewCipher(dek[:])
@@ -248,13 +213,11 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	auth := m.Sum(dak[:0])
 
 	// Ratchet the transcript with the ratchet key and the authenticator.
-	p.ratchet(append(rak[:], auth...))
+	p.combine(opRatchet, rak[:], auth)
 
 	// Expand a ratchet key and a counterfactual authentication tag.
 	var tagP [16]byte
-	_, _ = p.transcript.Write(rightEncode(uint64(len(rak)+len(tagP)) * 8))
-	_, _ = p.transcript.Read(rak[:])
-	_, _ = p.transcript.Read(tagP[:])
+	p.expand(rak[:], tagP[:])
 
 	// Compare the tag and the counterfactual tag in constant time.
 	if subtle.ConstantTimeCompare(tag, tagP[:]) == 0 {
@@ -262,7 +225,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	}
 
 	// Ratchet the transcript with the ratchet key.
-	p.ratchet(rak[:])
+	p.combine(opRatchet, rak[:])
 
 	return ret, nil
 }
@@ -301,11 +264,28 @@ func (p *Protocol) Clone() Protocol {
 	return clone
 }
 
-func (p *Protocol) ratchet(rak []byte) {
+// Combine appends an operation code and a sequence of bit string inputs to the protocol transcript using a recoverable
+// encoding.
+func (p *Protocol) combine(op byte, inputs ...[]byte) {
+	_, _ = p.transcript.Write([]byte{op})
+	for _, input := range inputs {
+		_, _ = p.transcript.Write(leftEncode(uint64(len(input)) * 8))
+		_, _ = p.transcript.Write(input)
+	}
+}
+
+// Expand appends the total length of desire output and then hashes the protocol transcript with cSHAKE128 to fill the
+// output slices with derived pseudorandom data. Finally, the transcript is reset to the empty string.
+func (p *Protocol) expand(outputs ...[]byte) {
+	n := 0
+	for _, output := range outputs {
+		n += len(output)
+	}
+	_, _ = p.transcript.Write(rightEncode(uint64(n) * 8))
+	for _, output := range outputs {
+		_, _ = p.transcript.Read(output)
+	}
 	p.transcript.Reset()
-	_, _ = p.transcript.Write([]byte{opRatchet})
-	_, _ = p.transcript.Write(leftEncode(uint64(len(rak)) * 8))
-	_, _ = p.transcript.Write(rak)
 }
 
 var zeroIV [aes.BlockSize]byte

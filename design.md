@@ -3,14 +3,14 @@
 Lockstitch is an incremental, stateful cryptographic primitive for symmetric-key cryptographic operations (e.g. hashing,
 encryption, message authentication codes, and authenticated encryption) in complex protocols. Inspired by TupleHash,
 STROBE, Noise Protocol's stateful objects, Merlin transcripts, and Xoodyak's Cyclist mode, Lockstitch uses
-[cSHAKE128][], [Poly1305][] and [AES-256][] to provide 10+ Gb/sec performance on modern processors at a 128-bit
+[cSHAKE128][], [Poly1305][] and [AES-128][] to provide 10+ Gb/sec performance on modern processors at a 128-bit
 security level.
 
 [cSHAKE128]: https://csrc.nist.gov/pubs/sp/800/185/final
 
 [Poly1305]: https://datatracker.ietf.org/doc/html/rfc8439
 
-[AES-256]: https://doi.org/10.6028/NIST.FIPS.197-upd1
+[AES-128]: https://doi.org/10.6028/NIST.FIPS.197-upd1
 
 ## Protocol
 
@@ -79,9 +79,9 @@ state, the label, and the output length.
 
 ```text
 function derive((state, S), label, n):
-  transcript = transcript || 0x02 || left_encode(|label|) || label || left_encode(n)
+  transcript = transcript || 0x02 || left_encode(|label|) || label || left_encode(|left_encode(n)|) || left_encode(n)
   rak || prf = cSHAKE128(X=transcript || right_encode(256+n), L=256+n, N="", S)
-  transcript = 0x05 || left_encode(256) || rak
+  transcript = 0x05 || left_encode(|rak|) || rak
   return ((transcript, S), prf)
 ```
 
@@ -126,19 +126,19 @@ extracted from the protocol's transcript, the label, and the output length.
 
 ```text
 function encrypt((transcript, S), label, plaintext):
-  transcript = transcript || 0x03 || left_encode(|label|) || label || left_encode(|plaintext|)
+  transcript = transcript || 0x03 || left_encode(|label|) || label || left_encode(|left_encode(|plaintext|)|) || left_encode(|plaintext|)
   rak || dek || dak = cSHAKE128(X=transcript || right_encode(256+128+256), L=256+128+256, N="", S)
   auth = Poly1305(dak, plaintext)
-  transcript = 0x05 || left_encode(256+256) || rak || auth
+  transcript = 0x05 || left_encode(|rak|) || rak || left_encode(|auth|) || auth
   ciphertext = AES128CTR(dek, [0x00; 16], plaintext)
   return ((transcript, S), ciphertext)
   
 function decrypt((transcript, S), label, ciphertext):
-  transcript = transcript || 0x03 || left_encode(|label|) || label || left_encode(|ciphertext|)
+  transcript = transcript || 0x03 || left_encode(|label|) || label || left_encode(|left_encode(|ciphertext|)|) || left_encode(|ciphertext|)
   rak || dek || dak = cSHAKE128(X=transcript || right_encode(256+128+256), L=256+128+256, N="", S)
   plaintext = AES128CTR(dek, [0x00; 16], ciphertext)
   auth = Poly1305(dak, plaintext)
-  transcript = 0x05 || left_encode(256+256) || rak || auth
+  transcript = 0x05 || left_encode(|rak|) || rak || left_encode(|auth|) || auth
   return ((transcript, S), plaintext)
 ```
 
@@ -175,23 +175,23 @@ authentication tag with the ciphertext. The `Seal` operation verifies the tag, r
 
 ```text
 function seal((transcript, S), label, plaintext):
-  transcript = transcript || 0x04 || left_encode(|label|) || label || left_encode(|plaintext|)
+  transcript = transcript || 0x04 || left_encode(|label|) || label || left_encode(|left_encode(|plaintext|)|) || left_encode(|plaintext|)
   rak || dek || dak = cSHAKE128(X=transcript || right_encode(256+128+256), L=256+128+256, N="", S)
   auth = Poly1305(dak, plaintext)
-  transcript = 0x05 || left_encode(256+256) || rak || auth
+  transcript = 0x05 || left_encode(|rak|) || rak || left_encode(|auth|) || auth
   rak || tag = cSHAKE128(X=transcript || right_encode(256+128), L=256+128, N="", S)
-  transcript = 0x05 || left_encode(256) || rak
+  transcript = 0x05 || left_encode(|rak|) || rak
   ciphertext = AES128CTR(dek, tag, plaintext)
   return ((transcript, S), ciphertext || tag)
  
 function open((transcript, S), label, ciphertext || tag):
-  transcript = transcript || 0x04 || left_encode(|label|) || label || left_encode(|plaintext|)
+  transcript = transcript || 0x04 || left_encode(|label|) || label || left_encode(|left_encode(|ciphertext|)|) || left_encode(|ciphertext|)
   rak || dek || dak = cSHAKE128(X=transcript || right_encode(256+128+256), L=256+128+256, N="", S)
   plaintext = AES128CTR(dek, tag, ciphertext)
   auth = Poly1305(dak, plaintext)
-  transcript = 0x05 || left_encode(256+256) || rak || auth
+  transcript = 0x05 || left_encode(|rak|) || rak || left_encode(|auth|) || auth
   rak || tag' = cSHAKE128(X=transcript || right_encode(256+128), L=256+128, N="", S)
-  transcript = 0x05 || left_encode(256) || rak
+  transcript = 0x05 || left_encode(|rak|) || rak
   if tag != tag':
     return ((transcript, S), "")
   return ((transcript, S), plaintext)
