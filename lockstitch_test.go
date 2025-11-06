@@ -100,6 +100,34 @@ func TestLeftEncode(t *testing.T) {
 	}
 }
 
+func TestRightEncode(t *testing.T) {
+	t.Parallel()
+
+	if got, want := rightEncode(0), []byte{0, 1}; !bytes.Equal(got, want) {
+		t.Errorf("rightEncode(0) = %v, want = %v", got, want)
+	}
+
+	if got, want := rightEncode(128), []byte{128, 1}; !bytes.Equal(got, want) {
+		t.Errorf("rightEncode(128) = %v, want = %v", got, want)
+	}
+
+	if got, want := rightEncode(65536), []byte{1, 0, 0, 3}; !bytes.Equal(got, want) {
+		t.Errorf("rightEncode(65536) = %v, want = %v", got, want)
+	}
+
+	if got, want := rightEncode(4096), []byte{16, 0, 2}; !bytes.Equal(got, want) {
+		t.Errorf("rightEncode(4096) = %v, want = %v", got, want)
+	}
+
+	if got, want := rightEncode(18446744073709551615), []byte{255, 255, 255, 255, 255, 255, 255, 255, 8}; !bytes.Equal(got, want) {
+		t.Errorf("rightEncode(18446744073709551615) = %v, want = %v", got, want)
+	}
+
+	if got, want := rightEncode(12345), []byte{48, 57, 2}; !bytes.Equal(got, want) {
+		t.Errorf("rightEncode(12345) = %v, want = %v", got, want)
+	}
+}
+
 func FuzzLeftEncode(f *testing.F) {
 	f.Add(uint64(2), uint64(3))
 	f.Fuzz(func(t *testing.T, a uint64, b uint64) {
@@ -110,6 +138,20 @@ func FuzzLeftEncode(f *testing.F) {
 			t.Errorf("leftEncode(%v) = %v, leftEncode(%v) = %v", a, ab, b, bb)
 		} else if a != b && bytes.Equal(ab, bb) {
 			t.Errorf("leftEncode(%v) = leftEncode(%v) = %v", a, b, ab)
+		}
+	})
+}
+
+func FuzzRightEncode(f *testing.F) {
+	f.Add(uint64(2), uint64(3))
+	f.Fuzz(func(t *testing.T, a uint64, b uint64) {
+		ab := rightEncode(a)
+		bb := rightEncode(b)
+
+		if a == b && !bytes.Equal(ab, bb) {
+			t.Errorf("rightEncode(%v) = %v, rightEncode(%v) = %v", a, ab, b, bb)
+		} else if a != b && bytes.Equal(ab, bb) {
+			t.Errorf("rightEncode(%v) = rightEncode(%v) = %v", a, b, ab)
 		}
 	})
 }
