@@ -16,7 +16,7 @@ import (
 	"errors"
 	"math/bits"
 
-	"golang.org/x/crypto/poly1305"
+	"golang.org/x/crypto/poly1305" //nolint:staticcheck // we're not using Poly1305 incorrectly, ignore deprecation warning
 )
 
 // TagLen is the number of bytes added to the plaintext by the Seal operation.
