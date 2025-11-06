@@ -1,7 +1,6 @@
 package lockstitch
 
 import (
-	"io"
 	"testing"
 )
 
@@ -75,26 +74,6 @@ func BenchmarkHash(b *testing.B) {
 	hash := func(message []byte) []byte {
 		protocol := NewProtocol("hash")
 		protocol.Mix("message", message)
-		return protocol.Derive("digest", nil, 32)
-	}
-
-	for _, length := range lengths {
-		b.Run(length.name, func(b *testing.B) {
-			input := make([]byte, length.n)
-			b.SetBytes(int64(len(input)))
-			for b.Loop() {
-				hash(input)
-			}
-		})
-	}
-}
-
-func BenchmarkHashWriter(b *testing.B) {
-	hash := func(message []byte) []byte {
-		protocol := NewProtocol("hash")
-		w := protocol.MixWriter("message", io.Discard)
-		_, _ = w.Write(message)
-		_ = w.Close()
 		return protocol.Derive("digest", nil, 32)
 	}
 

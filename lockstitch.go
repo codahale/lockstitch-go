@@ -1,21 +1,22 @@
 // Package lockstitch provides an incremental, stateful cryptographic primitive for symmetric-key cryptographic
 // operations (e.g., hashing, encryption, message authentication codes, and authenticated encryption) in complex
 // protocols. Inspired by TupleHash, STROBE, Noise Protocol's stateful objects, Merlin transcripts, and Xoodyak's
-// Cyclist mode, Lockstitch uses SHA-256 (https://doi.org/10.6028/NIST.FIPS.180-4) and AES-128
-// (https://doi.org/10.6028/NIST.FIPS.197-upd1) to provide 10+ Gb/sec performance on modern processors at a 128-bit
-// security level.
+// Cyclist mode, Lockstitch uses cSHAKE128 (https://csrc.nist.gov/pubs/sp/800/185/final), Poly1305 (RFC 8439), and
+// AES-128 (https://doi.org/10.6028/NIST.FIPS.197-upd1) to provide 10+ Gb/sec performance on modern processors at a
+// 128-bit security level.
 package lockstitch
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/hmac"
-	"crypto/sha256"
+	"crypto/sha3"
+	"crypto/subtle"
 	"encoding/binary"
 	"errors"
-	"hash"
-	"io"
 	"math/bits"
+
+	"golang.org/x/crypto/poly1305"
 )
 
 // TagLen is the number of bytes added to the plaintext by the Seal operation.
@@ -28,119 +29,28 @@ var ErrInvalidCiphertext = errors.New("lockstitch: invalid ciphertext")
 // A Protocol is a stateful object providing fine-grained symmetric-key cryptographic services like hashing, message
 // authentication codes, pseudo-random functions, authenticated encryption, and more.
 type Protocol struct {
-	state []byte
+	transcript *sha3.SHAKE
+	s          []byte
 }
 
 // NewProtocol creates a new Protocol with the given domain separation string.
 func NewProtocol(domain string) Protocol {
-	h := hmac.New(sha256.New, salt)
-	h.Write([]byte(domain))
-
+	// Initialize a cSHAKE128 instance with a customization string of `lockstitch:{domain}`.
+	s := append([]byte("lockstitch:"), []byte(domain)...)
 	return Protocol{
-		state: h.Sum(nil),
+		transcript: sha3.NewCSHAKE128(nil, s),
+		s:          s,
 	}
 }
 
 // Mix ratchets the protocol's state using the given label and input.
 func (p *Protocol) Mix(label string, input []byte) {
-	// Extract an operation key from the protocol's state, the operation code, the label, and the input, using an
-	// unambiguous encoding to prevent collisions:
-	//
-	//     opk = HMAC(state, 0x01 || left_encode(|label|) || label || input)
-	h := p.startOp(opMix, label)
-	h.Write(input)
-	opk := h.Sum(p.state[:0])
-
-	// Extract a new state value from the protocol's old state and the operation key:
-	//
-	//     state' = HMAC(state, opk)
-	//
-	// This preserves the invariant that the protocol state is the HMAC output of two uniform random keys.
-	h.Reset()
-	h.Write(opk)
-	p.state = h.Sum(p.state[:0])
-}
-
-// MixReader initiates a Mix operation with the given label and returns a ReadCloser wrapping the given Reader. All data
-// read from the WriteCloser will be read from the underlying reader and used in the Mix operation.  When Close() is
-// called on the ReadCloser, the Mix operation is completed and the Protocol's state is updated.
-func (p *Protocol) MixReader(label string, r io.Reader) io.ReadCloser {
-	// Extract an operation key from the protocol's state, the operation code, the label, and the input, using an
-	// unambiguous encoding to prevent collisions:
-	//
-	//     opk = HMAC(state, 0x01 || left_encode(|label|) || label || input)
-	h := p.startOp(opMix, label)
-	return &mixReader{p, h, r}
-}
-
-type mixReader struct {
-	p *Protocol
-	h hash.Hash
-	r io.Reader
-}
-
-func (r *mixReader) Read(p []byte) (int, error) {
-	n, err := r.r.Read(p)
-	if err != nil {
-		return n, err
-	}
-
-	r.h.Write(p[:n])
-
-	return n, nil
-}
-
-func (r *mixReader) Close() error {
-	opk := r.h.Sum(nil)
-
-	// Extract a new state value from the protocol's old state and the operation key:
-	//
-	//     state' = HMAC(state, opk)
-	//
-	// This preserves the invariant that the protocol state is the HMAC output of two uniform random keys.
-	r.h.Reset()
-	r.h.Write(opk)
-	r.p.state = r.h.Sum(r.p.state[:0])
-
-	return nil
-}
-
-// MixWriter initiates a Mix operation with the given label and returns a WriteCloser wrapping the given Writer. All
-// data written to the WriteCloser will be used in the Mix operation as well as written to the underlying writer. When
-// Close() is called on the WriteCloser, the Mix operation is completed and the Protocol's state is updated.
-func (p *Protocol) MixWriter(label string, w io.Writer) io.WriteCloser {
-	// Extract an operation key from the protocol's state, the operation code, the label, and the input, using an
-	// unambiguous encoding to prevent collisions:
-	//
-	//     opk = HMAC(state, 0x01 || left_encode(|label|) || label || input)
-	h := p.startOp(opMix, label)
-	return &mixWriter{p, h, w}
-}
-
-type mixWriter struct {
-	p *Protocol
-	h hash.Hash
-	w io.Writer
-}
-
-func (w *mixWriter) Write(p []byte) (int, error) {
-	w.h.Write(p)
-	return w.w.Write(p)
-}
-
-func (w *mixWriter) Close() error {
-	opk := w.h.Sum(nil)
-
-	// Extract a new state value from the protocol's old state and the operation key:
-	//
-	//     state' = HMAC(state, opk)
-	//
-	// This preserves the invariant that the protocol state is the HMAC output of two uniform random keys.
-	w.h.Reset()
-	w.h.Write(opk)
-	w.p.state = w.h.Sum(w.p.state[:0])
-
-	return nil
+	// Append the operation metadata and input to the transcript in a recoverable encoding.
+	_, _ = p.transcript.Write([]byte{opMix})
+	_, _ = p.transcript.Write(leftEncode(uint64(len(label)) * 8))
+	_, _ = p.transcript.Write([]byte(label))
+	_, _ = p.transcript.Write(leftEncode(uint64(len(input)) * 8))
+	_, _ = p.transcript.Write(input)
 }
 
 // Derive generates pseudorandom output from the Protocol's current state, the label, and the output length, then
@@ -151,32 +61,21 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 		panic("invalid argument to Derive: n cannot be negative")
 	}
 
-	// Extract an operation key from the protocol's state, the operation code, the label, and the output length, using an
-	// unambiguous encoding to prevent collisions:
-	//
-	//     opk = HMAC(state, 0x02 || left_encode(|label|) || label || left_encode(|out|))
-	h := p.startOp(opDerive, label)
-	h.Write(leftEncode(uint64(n) * 8))
-	opk := h.Sum(p.state[:0])
+	// Append the operation metadata to the transcript in a recoverable encoding.
+	_, _ = p.transcript.Write([]byte{opDerive})
+	_, _ = p.transcript.Write(leftEncode(uint64(len(label)) * 8))
+	_, _ = p.transcript.Write([]byte(label))
+	_, _ = p.transcript.Write(leftEncode(uint64(n) * 8))
 
-	// Use the PRK to encrypt all zeroes with AES:
-	//
-	//     prf = AES-CTR(opk[:16], opk[16:], [0x00; N])
-	ret, out := sliceForAppend(dst, n)
-	for i := range out {
-		out[i] = 0
-	}
-	block, _ := aes.NewCipher(opk[:16])
-	cipher.NewCTR(block, opk[16:]).XORKeyStream(out, out)
+	// Expand a ratchet key and n bytes of PRF output from the transcript.
+	var rak [32]byte
+	ret, prf := sliceForAppend(dst, n)
+	_, _ = p.transcript.Write(rightEncode(uint64(len(rak)+n) * 8))
+	_, _ = p.transcript.Read(rak[:])
+	_, _ = p.transcript.Read(prf)
 
-	// Extract a new state value from the protocol's old state and the operation key:
-	//
-	//     state' = HMAC(state, opk)
-	//
-	// This preserves the invariant that the protocol state is the HMAC output of two uniform random keys.
-	h.Reset()
-	h.Write(opk)
-	p.state = h.Sum(p.state[:0])
+	// Ratchet the transcript with the ratchet key.
+	p.ratchet(rak[:])
 
 	return ret
 }
@@ -187,37 +86,36 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 // To reuse plaintext's storage for the encrypted output, use plaintext[:0] as dst. Otherwise, the remaining capacity of
 // dst must not overlap plaintext.
 func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
+	// Append the operation metadata to the transcript.
+	_, _ = p.transcript.Write([]byte{opCrypt})
+	_, _ = p.transcript.Write(leftEncode(uint64(len(label)) * 8))
+	_, _ = p.transcript.Write([]byte(label))
+	_, _ = p.transcript.Write(leftEncode(uint64(len(plaintext)) * 8))
+
+	// Expand a ratchet key, a data encryption key, and a data authentication key from the transcript.
+	var (
+		rak [32]byte
+		dek [16]byte
+		dak [32]byte
+	)
+	_, _ = p.transcript.Write(rightEncode(uint64(len(rak)+len(dek)+len(dak)) * 8))
+	_, _ = p.transcript.Read(rak[:])
+	_, _ = p.transcript.Read(dek[:])
+	_, _ = p.transcript.Read(dak[:])
+
+	// Calculate a Poly1305 authenticator of the plaintext.
+	m := poly1305.New(&dak)
+	_, _ = m.Write(plaintext)
+	auth := m.Sum(dak[:0])
+
+	// Ratchet the transcript with the ratchet key and the authenticator.
+	p.ratchet(append(rak[:], auth...))
+
+	// Encrypt the plaintext using AES-128-CTR with an all-zero IV.
 	ret, ciphertext := sliceForAppend(dst, len(plaintext))
-
-	// Extract a data encryption key and data authentication key from the protocol's state, the operation code, the label,
-	// and the output length, using an unambiguous encoding to prevent collisions:
-	//
-	//     dek || dak = HMAC(state, 0x03 || left_encode(|label|) || label || left_encode(|plaintext|))
-	h := p.startOp(opCrypt, label)
-	h.Write(leftEncode(uint64(len(plaintext)) * 8))
-	opk := h.Sum(p.state[:0])
-	block, _ := aes.NewCipher(opk[:16])
-	h2 := hmac.New(sha256.New, opk[16:])
-
-	// Use the DAK to extract a PRK from the plaintext with HMAC-SHA-256:
-	//
-	//     prk = HMAC(dak, plaintext)
-	h2.Write(plaintext)
-	prk := h2.Sum(p.state[:0])
-
-	// Use the DEK to encrypt the plaintext with AES-128-CTR:
-	//
-	//     ciphertext = AES-CTR(dek, [0x00; 16], plaintext)
-	cipher.NewCTR(block, zeroIV).XORKeyStream(ciphertext, plaintext)
-
-	// Extract a new state value from the protocol's old state and the PRK:
-	//
-	//     state' = HMAC(state, prk)
-	//
-	// This preserves the invariant that the protocol state is the HMAC output of two uniform random keys.
-	h.Reset()
-	h.Write(prk)
-	p.state = h.Sum(p.state[:0])
+	block, _ := aes.NewCipher(dek[:])
+	ctr := cipher.NewCTR(block, zeroIV[:])
+	ctr.XORKeyStream(ciphertext, plaintext)
 
 	return ret
 }
@@ -227,37 +125,36 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 // ciphertext's storage for the decrypted output, use ciphertext[:0] as dst. Otherwise, the remaining capacity of dst
 // must not overlap ciphertext.
 func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
+	// Append the operation metadata to the transcript.
+	_, _ = p.transcript.Write([]byte{opCrypt})
+	_, _ = p.transcript.Write(leftEncode(uint64(len(label)) * 8))
+	_, _ = p.transcript.Write([]byte(label))
+	_, _ = p.transcript.Write(leftEncode(uint64(len(ciphertext)) * 8))
+
+	// Expand a ratchet key, a data encryption key, and a data authentication key from the transcript.
+	var (
+		rak [32]byte
+		dek [16]byte
+		dak [32]byte
+	)
+	_, _ = p.transcript.Write(rightEncode(uint64(len(rak)+len(dek)+len(dak)) * 8))
+	_, _ = p.transcript.Read(rak[:])
+	_, _ = p.transcript.Read(dek[:])
+	_, _ = p.transcript.Read(dak[:])
+
+	// Decrypt the ciphertext using AES-128-CTR with an all-zero IV.
 	ret, plaintext := sliceForAppend(dst, len(ciphertext))
+	block, _ := aes.NewCipher(dek[:])
+	ctr := cipher.NewCTR(block, zeroIV[:])
+	ctr.XORKeyStream(plaintext, ciphertext)
 
-	// Extract a data encryption key and data authentication key from the protocol's state, the operation code, the label,
-	// and the output length, using an unambiguous encoding to prevent collisions:
-	//
-	//     dek || dak = HMAC(state, 0x03 || left_encode(|label|) || label || left_encode(|plaintext|))
-	h := p.startOp(opCrypt, label)
-	h.Write(leftEncode(uint64(len(ciphertext)) * 8))
-	opk := h.Sum(p.state[:0])
-	block, _ := aes.NewCipher(opk[:16])
-	h2 := hmac.New(sha256.New, opk[16:])
+	// Calculate a Poly1305 authenticator of the plaintext.
+	m := poly1305.New(&dak)
+	_, _ = m.Write(plaintext)
+	auth := m.Sum(dak[:0])
 
-	// Use the DEK to decrypt the ciphertext with AES-128-CTR:
-	//
-	//     plaintext = AES-CTR(dek, [0x00; 16], ciphertext)
-	cipher.NewCTR(block, zeroIV).XORKeyStream(plaintext, ciphertext)
-
-	// Use the DAK to extract a PRK from the plaintext with HMAC-SHA-256:
-	//
-	//     prk = HMAC(dak, plaintext)
-	h2.Write(plaintext)
-	prk := h2.Sum(p.state[:0])
-
-	// Extract a new state value from the protocol's old state and the PRK:
-	//
-	//     state′ = HMAC(state, prk)
-	//
-	// This preserves the invariant that the protocol state is the HMAC output of two uniform random keys.
-	h.Reset()
-	h.Write(prk)
-	p.state = h.Sum(p.state[:0])
+	// Ratchet the transcript with the ratchet key and the authenticator.
+	p.ratchet(append(rak[:], auth...))
 
 	return ret
 }
@@ -269,121 +166,156 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 // To reuse plaintext's storage for the encrypted output, use plaintext[:0] as dst. Otherwise, the remaining capacity of
 // dst must not overlap plaintext.
 func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
-	ret, out := sliceForAppend(dst, len(plaintext)+TagLen)
-	ciphertext, tag := out[:len(plaintext)], out[len(plaintext):]
+	ret, ciphertext := sliceForAppend(dst, len(plaintext)+TagLen)
+	ciphertext, tag := ciphertext[:len(plaintext)], ciphertext[len(plaintext):]
 
-	// Extract a data encryption key and data authentication key from the protocol's state, the operation code, the label,
-	// and the output length, using an unambiguous encoding to prevent collisions:
-	//
-	//     dek || dak = HMAC(state, 0x04 || left_encode(|label|) || label || left_encode(|plaintext|))
-	h := p.startOp(opAuthCrypt, label)
-	h.Write(leftEncode(uint64(len(plaintext)) * 8))
-	opk := h.Sum(p.state[:0])
-	block, _ := aes.NewCipher(opk[:16])
-	h2 := hmac.New(sha256.New, opk[16:])
+	// Append the operation metadata to the transcript.
+	_, _ = p.transcript.Write([]byte{opAuthCrypt})
+	_, _ = p.transcript.Write(leftEncode(uint64(len(label)) * 8))
+	_, _ = p.transcript.Write([]byte(label))
+	_, _ = p.transcript.Write(leftEncode(uint64(len(plaintext)) * 8))
 
-	// Use the DAK to extract a PRK from the plaintext with HMAC-SHA-256:
-	//
-	//     prk_0 || prk_1 = HMAC(dak, plaintext)
-	h2.Write(plaintext)
-	prk := h2.Sum(p.state[:0])
-	copy(tag, prk[:TagLen])
+	// Expand a ratchet key, a data encryption key, and a data authentication key from the transcript.
+	var (
+		rak [32]byte
+		dek [16]byte
+		dak [32]byte
+	)
+	_, _ = p.transcript.Write(rightEncode(uint64(len(rak)+len(dek)+len(dak)) * 8))
+	_, _ = p.transcript.Read(rak[:])
+	_, _ = p.transcript.Read(dek[:])
+	_, _ = p.transcript.Read(dak[:])
 
-	// Use the DEK and tag to encrypt the plaintext with AES-128, using the first 16 bytes of
-	// the PRK as the nonce:
-	//
-	//     ciphertext = AES-CTR(dek, prk_0, plaintext)
-	cipher.NewCTR(block, tag).XORKeyStream(ciphertext, plaintext)
+	// Calculate a Poly1305 authenticator of the plaintext.
+	m := poly1305.New(&dak)
+	_, _ = m.Write(plaintext)
+	auth := m.Sum(dak[:0])
 
-	// Use the PRK to extract a new protocol state:
-	//
-	//     state′ = HMAC(state, prk_0 || prk_1)
-	//
-	// This preserves the invariant that the protocol state is the HMAC output of two uniform random keys.
-	h.Reset()
-	h.Write(prk)
-	p.state = h.Sum(p.state[:0])
+	// Ratchet the transcript with the ratchet key and the authenticator.
+	p.ratchet(append(rak[:], auth...))
+
+	// Expand a ratchet key and an authentication tag.
+	_, _ = p.transcript.Write(rightEncode(uint64(len(rak)+len(tag)) * 8))
+	_, _ = p.transcript.Read(rak[:])
+	_, _ = p.transcript.Read(tag)
+
+	// Encrypt the plaintext using AES-128-CTR with the tag as the IV.
+	block, _ := aes.NewCipher(dek[:])
+	ctr := cipher.NewCTR(block, tag)
+	ctr.XORKeyStream(ciphertext, plaintext)
+
+	// Ratchet the transcript with the ratchet key.
+	p.ratchet(rak[:])
 
 	return ret
 }
 
 // Open decrypts the given slice in place using the protocol's current state as the key, verifying the final TagLen
-// bytes as an authentication tag, then ratchets the protocol's state using the label and input. If the ciphertext is
-// authentic, it appends the plaintext to dst and returns the resulting slice; otherwise, ErrInvalidCiphertext is
-// returned.
+// bytes as an authentication tag. If the ciphertext is authentic, it appends the plaintext to dst and returns the
+// resulting slice; otherwise, ErrInvalidCiphertext is returned.
 //
 // To reuse ciphertext's storage for the decrypted output, use ciphertext[:0] as dst. Otherwise, the remaining capacity
 // of dst must not overlap ciphertext.
 func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
-	ret, plaintext := sliceForAppend(dst, len(ciphertext)-TagLen)
 	ciphertext, tag := ciphertext[:len(ciphertext)-TagLen], ciphertext[len(ciphertext)-TagLen:]
+	ret, plaintext := sliceForAppend(dst, len(ciphertext))
 
-	// Extract a data encryption key and data authentication key from the protocol's state, the operation code, the label,
-	// and the output length, using an unambiguous encoding to prevent collisions:
-	//
-	//     dek || dak = HMAC(state, 0x04 || left_encode(|label|) || label || left_encode(|plaintext|))
-	h := p.startOp(opAuthCrypt, label)
-	h.Write(leftEncode(uint64(len(plaintext)) * 8))
-	opk := h.Sum(p.state[:0])
-	block, _ := aes.NewCipher(opk[:16])
-	h2 := hmac.New(sha256.New, opk[16:])
+	// Append the operation metadata to the transcript.
+	_, _ = p.transcript.Write([]byte{opAuthCrypt})
+	_, _ = p.transcript.Write(leftEncode(uint64(len(label)) * 8))
+	_, _ = p.transcript.Write([]byte(label))
+	_, _ = p.transcript.Write(leftEncode(uint64(len(ciphertext)) * 8))
 
-	// Use the DEK and the tag to decrypt the plaintext with AES-128:
-	//
-	//     plaintext = AES-CTR(dek, tag, ciphertext)
-	cipher.NewCTR(block, tag).XORKeyStream(plaintext, ciphertext)
+	// Expand a ratchet key, a data encryption key, and a data authentication key from the transcript.
+	var (
+		rak [32]byte
+		dek [16]byte
+		dak [32]byte
+	)
+	_, _ = p.transcript.Write(rightEncode(uint64(len(rak)+len(dek)+len(dak)) * 8))
+	_, _ = p.transcript.Read(rak[:])
+	_, _ = p.transcript.Read(dek[:])
+	_, _ = p.transcript.Read(dak[:])
 
-	// Use the DAK to extract a PRK from the plaintext with HMAC-SHA-256:
-	//
-	//     prk_0 || prk_1 = HMAC(dak, plaintext)
-	h2.Write(plaintext)
-	prk := h2.Sum(nil)
+	// Decrypt the plaintext using AES-128-CTR and using the tag as the IV.
+	block, _ := aes.NewCipher(dek[:])
+	ctr := cipher.NewCTR(block, tag)
+	ctr.XORKeyStream(plaintext, ciphertext)
 
-	// Use the PRK to extract a new protocol state:
-	//
-	//     state′ = HMAC(state, prk_0 || prk_1)
-	//
-	// This preserves the invariant that the protocol state is the HMAC output of two uniform random keys.
-	h.Reset()
-	h.Write(prk)
-	p.state = h.Sum(p.state[:0])
+	// Calculate a Poly1305 authenticator of the plaintext.
+	m := poly1305.New(&dak)
+	_, _ = m.Write(plaintext)
+	auth := m.Sum(dak[:0])
 
-	// Verify the authentication tag:
-	//
-	//     tag = prk_0
-	if hmac.Equal(tag, prk[:TagLen]) {
-		return ret, nil
+	// Ratchet the transcript with the ratchet key and the authenticator.
+	p.ratchet(append(rak[:], auth...))
+
+	// Expand a ratchet key and a counterfactual authentication tag.
+	var tagP [16]byte
+	_, _ = p.transcript.Write(rightEncode(uint64(len(rak)+len(tagP)) * 8))
+	_, _ = p.transcript.Read(rak[:])
+	_, _ = p.transcript.Read(tagP[:])
+
+	// Compare the tag and the counterfactual tag in constant time.
+	if subtle.ConstantTimeCompare(tag, tagP[:]) == 0 {
+		return nil, ErrInvalidCiphertext
 	}
-	return nil, ErrInvalidCiphertext
+
+	// Ratchet the transcript with the ratchet key.
+	p.ratchet(rak[:])
+
+	return ret, nil
+}
+
+func (p *Protocol) AppendBinary(b []byte) ([]byte, error) {
+	b = binary.BigEndian.AppendUint16(b, uint16(len(p.s)))
+	b = append(b, p.s...)
+	return p.transcript.AppendBinary(b)
+}
+
+func (p *Protocol) MarshalBinary() (data []byte, err error) {
+	return p.AppendBinary(make([]byte, 0, 256))
+}
+
+func (p *Protocol) UnmarshalBinary(data []byte) error {
+	sLen := binary.BigEndian.Uint16(data)
+	S := bytes.Clone(data[2 : 2+int(sLen)])
+	p.transcript = sha3.NewCSHAKE128(nil, S)
+	if err := p.transcript.UnmarshalBinary(data[2+int(sLen):]); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Clone returns an exact clone of the receiver Protocol.
 func (p *Protocol) Clone() Protocol {
-	return Protocol{state: p.state}
-}
-
-func (p *Protocol) startOp(op byte, label string) hash.Hash {
-	h := hmac.New(sha256.New, p.state)
-	h.Write([]byte{op})
-	h.Write(leftEncode(uint64(len(label)) * 8))
-	h.Write([]byte(label))
-	return h
-}
-
-var (
-	zeroIV = make([]byte, aes.BlockSize)
-	salt   = []byte{
-		// HMAC("", "lockstitch")
-		220, 87, 54, 63, 227, 165, 27, 245, 65, 144, 247, 188, 40, 15, 101, 174, 80, 197, 19, 248,
-		7, 216, 209, 168, 247, 171, 219, 147, 63, 135, 63, 1,
+	state, err := p.MarshalBinary()
+	if err != nil {
+		panic(err)
 	}
-)
+
+	var clone Protocol
+	if err := clone.UnmarshalBinary(state); err != nil {
+		panic(err)
+	}
+	return clone
+}
+
+func (p *Protocol) ratchet(rak []byte) {
+	p.transcript.Reset()
+	_, _ = p.transcript.Write([]byte{opRatchet})
+	_, _ = p.transcript.Write(leftEncode(uint64(len(rak)) * 8))
+	_, _ = p.transcript.Write(rak)
+}
+
+var zeroIV [aes.BlockSize]byte
 
 const (
 	opMix       = 0x01
 	opDerive    = 0x02
 	opCrypt     = 0x03
 	opAuthCrypt = 0x04
+	opRatchet   = 0x05
 )
 
 // leftEncode encodes an integer value using NIST SP 800-185's left_encode.
@@ -394,6 +326,17 @@ func leftEncode(value uint64) []byte {
 	binary.BigEndian.PutUint64(buf[1:], value)
 	n := max(len(buf)-1-(bits.LeadingZeros64(value)/8), 1)
 	buf[len(buf)-n-1] = byte(n)
+	return buf[len(buf)-n-1:]
+}
+
+// rightEncode encodes an integer value using NIST SP 800-185's right_encode.
+//
+// https://www.nist.gov/publications/sha-3-derived-functions-cshake-kmac-tuplehash-and-parallelhash
+func rightEncode(value uint64) []byte {
+	var buf [9]byte
+	binary.BigEndian.PutUint64(buf[:8], value)
+	n := max(len(buf)-1-(bits.LeadingZeros64(value)/8), 1)
+	buf[len(buf)-1] = byte(n)
 	return buf[len(buf)-n-1:]
 }
 
