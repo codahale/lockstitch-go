@@ -311,27 +311,29 @@ func sliceForAppend(in []byte, n int) (head, tail []byte) {
 
 // polyvalAuth pads the given message using the same scheme as AES-GCM-SIV and calculates a POLYVAL authenticator of it.
 func polyvalAuth(dst, key, message []byte) []byte {
-	length := make([]byte, 16)
-	binary.LittleEndian.PutUint64(length[8:16], uint64(len(message))*8)
+	n := len(message)
+	block := make([]byte, 16)
 
-	p, err := polyval.New(key)
-	if err != nil {
-		panic(err)
+	p, _ := polyval.New(key)
+
+	// Hash all full blocks.
+	if len(message) >= 16 {
+		m := len(message) &^ (16 - 1)
+		p.Update(message[:m])
+		message = message[m:]
 	}
-	padS(p, message)
-	p.Update(length)
+
+	// Pad final message block with zeros.
+	if len(message) > 0 {
+		copy(block, message)
+		p.Update(block)
+	}
+
+	// Hash a final block with the message length. The first eight bytes are zero because, unlike AES-GCM-SIV, there is
+	// no authenticated data.
+	binary.LittleEndian.PutUint64(block[:8], 0)
+	binary.LittleEndian.PutUint64(block[8:], uint64(n)*8)
+	p.Update(block)
+
 	return p.Sum(dst[:0])
-}
-
-func padS(p *polyval.Polyval, src []byte) {
-	if len(src) >= 16 {
-		n := len(src) &^ (16 - 1)
-		p.Update(src[:n])
-		src = src[n:]
-	}
-	if len(src) > 0 {
-		dst := make([]byte, 16)
-		copy(dst, src)
-		p.Update(dst)
-	}
 }
