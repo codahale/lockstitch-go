@@ -1,6 +1,7 @@
 package lockstitch
 
 import (
+	"crypto/sha3"
 	"testing"
 )
 
@@ -149,6 +150,29 @@ func BenchmarkAEAD(b *testing.B) {
 			}
 		})
 	}
+}
+
+func BenchmarkExpand(b *testing.B) {
+	b.Run("concat", func(b *testing.B) {
+		h := sha3.NewSHAKE128()
+		output := make([]byte, 96)
+		for b.Loop() {
+			h2 := *h
+			_, _ = h2.Read(output)
+		}
+	})
+	b.Run("separate", func(b *testing.B) {
+		h := sha3.NewSHAKE128()
+		output := make([]byte, 96)
+		for b.Loop() {
+			h2 := *h
+			_, _ = h2.Read(output[:32])
+			h3 := *h
+			_, _ = h3.Read(output[32:64])
+			h4 := *h
+			_, _ = h4.Read(output[64:])
+		}
+	})
 }
 
 var lengths = []struct {

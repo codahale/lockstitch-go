@@ -37,7 +37,7 @@ communicate the source of the input or the intended use of the output. `server-p
 An `Init` operation initializes a Lockstitch protocol with an empty transcript and a domain separation string:
 
 ```text
-function init(domain):
+function Init(domain):
   transcript = ""
   S = "lockstitch:" || domain
   return (transcript, S)
@@ -59,7 +59,7 @@ A `Mix` operation accepts a label and an input, encodes them, and appends them t
 constant operation code:
 
 ```text
-function mix((transcript, S), label, input):
+function Mix((transcript, S), label, input):
   transcript = transcript || 0x01 || left_encode(|label|) || label || input
   return (transcript, S)
 ```
@@ -75,20 +75,33 @@ reduce it to an input with a known length.
 ### `Derive`
 
 A `Derive` operation accepts a label and an output length and returns pseudorandom data derived from the protocol's
-state, the label, and the output length.
+state, the label, and the output length. This requires two helper functions: `expand`, which hashes the protocol's
+transcript with cSHAKE128 and generates a derived key, and `ratchet`, which replaces the protocol's transcript with
+derived output:
 
 ```text
-function derive((state, S), label, n):
+function expand((transcript, S), label, n):
+  return cSHAKE128(X=transcript || 0x05 || left_encode(|label|) || label || right_encode(n), L=n, N="", S)
+```
+
+```text
+function ratchet(rak):
+  return 0x06 || left_encode(|rak|) || rak
+```
+
+```text
+function derive((transcript, S), label, n):
   transcript = transcript || 0x02 || left_encode(|label|) || label || left_encode(|left_encode(n)|) || left_encode(n)
-  rak || prf = cSHAKE128(X=transcript || right_encode(256+n), L=256+n, N="", S)
-  transcript = 0x05 || left_encode(|rak|) || rak
+  rak = expand((transcript, S), "ratchet key", 256)
+  prf = expand((transcript, S), "prf output", n)
+  transcript = ratchet(rak)
   return ((transcript, S), prf)
 ```
 
 `Derive` appends an operation code, the label length in bits, the label, and the requested output length in bits to the
 transcript. It then hashes the transcript with cSHAKE128 (using the customization string established in the `Init`
 operation) and derives two values: `rak`, a 256-bit ratchet key; and `prf`, the requested n-bit output. The transcript
-is relaced with an internal ratchet operation consisting of an operation code, the ratchet key length in bits, and the
+is replaced with an internal ratchet operation consisting of an operation code, the ratchet key length in bits, and the
 ratchet key.
 
 **IMPORTANT:** A `Derive` operation's output depends on both the label and the output length.
@@ -127,18 +140,22 @@ extracted from the protocol's transcript, the label, and the output length.
 ```text
 function encrypt((transcript, S), label, plaintext):
   transcript = transcript || 0x03 || left_encode(|label|) || label || left_encode(|left_encode(|plaintext|)|) || left_encode(|plaintext|)
-  rak || dek || dak = cSHAKE128(X=transcript || right_encode(256+128+256), L=256+128+256, N="", S)
+  rak = expand((transcript, S), "ratchet key", 256)
+  dek = expand((transcript, S), "data encryption key", 128)
+  dak = expand((transcript, S), "data authentication key", 256)
   auth = Poly1305(dak, plaintext)
-  transcript = 0x05 || left_encode(|rak|) || rak || left_encode(|auth|) || auth
+  transcript = ratchet(rak || auth)
   ciphertext = AES128CTR(dek, [0x00; 16], plaintext)
   return ((transcript, S), ciphertext)
   
 function decrypt((transcript, S), label, ciphertext):
   transcript = transcript || 0x03 || left_encode(|label|) || label || left_encode(|left_encode(|ciphertext|)|) || left_encode(|ciphertext|)
-  rak || dek || dak = cSHAKE128(X=transcript || right_encode(256+128+256), L=256+128+256, N="", S)
+  rak = expand((transcript, S), "ratchet key", 256)
+  dek = expand((transcript, S), "data encryption key", 128)
+  dak = expand((transcript, S), "data authentication key", 256)
   plaintext = AES128CTR(dek, [0x00; 16], ciphertext)
   auth = Poly1305(dak, plaintext)
-  transcript = 0x05 || left_encode(|rak|) || rak || left_encode(|auth|) || auth
+  transcript = ratchet(rak || auth)
   return ((transcript, S), plaintext)
 ```
 
@@ -176,22 +193,28 @@ authentication tag with the ciphertext. The `Seal` operation verifies the tag, r
 ```text
 function seal((transcript, S), label, plaintext):
   transcript = transcript || 0x04 || left_encode(|label|) || label || left_encode(|left_encode(|plaintext|)|) || left_encode(|plaintext|)
-  rak || dek || dak = cSHAKE128(X=transcript || right_encode(256+128+256), L=256+128+256, N="", S)
+  rak = expand((transcript, S), "ratchet key", 256)
+  dek = expand((transcript, S), "data encryption key", 128)
+  dak = expand((transcript, S), "data authentication key", 256)
   auth = Poly1305(dak, plaintext)
-  transcript = 0x05 || left_encode(|rak|) || rak || left_encode(|auth|) || auth
-  rak || tag = cSHAKE128(X=transcript || right_encode(256+128), L=256+128, N="", S)
-  transcript = 0x05 || left_encode(|rak|) || rak
+  transcript = ratchet(rak || auth)
+  rak = expand((transcript, S), "ratchet key", 256)
+  tag = expand((transcript, S), "authentication tag", 128)
+  transcript = ratchet(rak)
   ciphertext = AES128CTR(dek, tag, plaintext)
   return ((transcript, S), ciphertext || tag)
  
 function open((transcript, S), label, ciphertext || tag):
   transcript = transcript || 0x04 || left_encode(|label|) || label || left_encode(|left_encode(|ciphertext|)|) || left_encode(|ciphertext|)
-  rak || dek || dak = cSHAKE128(X=transcript || right_encode(256+128+256), L=256+128+256, N="", S)
+  rak = expand((transcript, S), "ratchet key", 256)
+  dek = expand((transcript, S), "data encryption key", 128)
+  dak = expand((transcript, S), "data authentication key", 256)
   plaintext = AES128CTR(dek, tag, ciphertext)
   auth = Poly1305(dak, plaintext)
-  transcript = 0x05 || left_encode(|rak|) || rak || left_encode(|auth|) || auth
-  rak || tag' = cSHAKE128(X=transcript || right_encode(256+128), L=256+128, N="", S)
-  transcript = 0x05 || left_encode(|rak|) || rak
+  transcript = ratchet(rak || auth)
+  rak = expand((transcript, S), "ratchet key", 256)
+  tag' = expand((transcript, S), "authentication tag", 128)
+  transcript = ratchet(rak)
   if tag != tag':
     return ((transcript, S), "")
   return ((transcript, S), plaintext)
