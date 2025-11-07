@@ -7,7 +7,6 @@
 package lockstitch
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/sha3"
@@ -23,24 +22,27 @@ import (
 // TagLen is the number of bytes added to the plaintext by the Seal operation.
 const TagLen = aes.BlockSize
 
-// ErrInvalidCiphertext is returned when the ciphertext is invalid or has been decrypted with the
-// wrong key.
-var ErrInvalidCiphertext = errors.New("lockstitch: invalid ciphertext")
+var (
+	// ErrInvalidCiphertext is returned when the ciphertext is invalid or has been decrypted with the
+	// wrong key.
+	ErrInvalidCiphertext = errors.New("lockstitch: invalid ciphertext")
+
+	// ErrInvalidState is returned when a protocol's state cannot be unmarshalled successfully, either due to malformed
+	// data or an incorrect protocol domain.
+	ErrInvalidState = errors.New("lockstitch: invalid protocol state")
+)
 
 // A Protocol is a stateful object providing fine-grained symmetric-key cryptographic services like hashing, message
 // authentication codes, pseudo-random functions, authenticated encryption, and more.
 type Protocol struct {
 	transcript *sha3.SHAKE
-	s          []byte
 }
 
 // NewProtocol creates a new Protocol with the given domain separation string.
 func NewProtocol(domain string) Protocol {
 	// Initialize a cSHAKE128 instance with a customization string of `lockstitch:{domain}`.
-	s := append([]byte("lockstitch:"), []byte(domain)...)
 	return Protocol{
-		transcript: sha3.NewCSHAKE128(nil, s),
-		s:          s,
+		transcript: sha3.NewCSHAKE128(nil, append([]byte("lockstitch:"), []byte(domain)...)),
 	}
 }
 
@@ -235,8 +237,6 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 }
 
 func (p *Protocol) AppendBinary(b []byte) ([]byte, error) {
-	b = binary.BigEndian.AppendUint16(b, uint16(len(p.s)))
-	b = append(b, p.s...)
 	return p.transcript.AppendBinary(b)
 }
 
@@ -245,27 +245,16 @@ func (p *Protocol) MarshalBinary() (data []byte, err error) {
 }
 
 func (p *Protocol) UnmarshalBinary(data []byte) error {
-	sLen := binary.BigEndian.Uint16(data)
-	S := bytes.Clone(data[2 : 2+int(sLen)])
-	p.transcript = sha3.NewCSHAKE128(nil, S)
-	if err := p.transcript.UnmarshalBinary(data[2+int(sLen):]); err != nil {
-		return err
+	if err := p.transcript.UnmarshalBinary(data); err != nil {
+		return ErrInvalidState
 	}
 	return nil
 }
 
 // Clone returns an exact clone of the receiver Protocol.
 func (p *Protocol) Clone() Protocol {
-	state, err := p.MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
-
-	var clone Protocol
-	if err := clone.UnmarshalBinary(state); err != nil {
-		panic(err)
-	}
-	return clone
+	t := *p.transcript
+	return Protocol{transcript: &t}
 }
 
 func (p *Protocol) ratchet(rak []byte) {
