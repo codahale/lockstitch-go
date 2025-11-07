@@ -6,12 +6,31 @@ import (
 	"testing"
 )
 
-func TestClone(t *testing.T) {
+func TestProtocol_Clone(t *testing.T) {
 	t.Parallel()
 
 	p1 := NewProtocol("example")
 	p1.Mix("a thing", []byte("another thing"))
 	p2 := p1.Clone()
+
+	if got, want := p2.Derive("third", nil, 8), p1.Derive("third", nil, 8); !bytes.Equal(got, want) {
+		t.Errorf("Derive('third') = %x, want = %x", got, want)
+	}
+}
+
+func TestProtocol_MarshalBinary(t *testing.T) {
+	p1 := NewProtocol("example")
+	p1.Mix("a thing", []byte("another thing"))
+
+	state, err := p1.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p2 := NewProtocol("example")
+	if err := p2.UnmarshalBinary(state); err != nil {
+		t.Fatal(err)
+	}
 
 	if got, want := p2.Derive("third", nil, 8), p1.Derive("third", nil, 8); !bytes.Equal(got, want) {
 		t.Errorf("Derive('third') = %x, want = %x", got, want)
