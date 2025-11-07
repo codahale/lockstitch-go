@@ -257,12 +257,13 @@ func (p *Protocol) Clone() Protocol {
 	return Protocol{transcript: &t}
 }
 
+// ratchet replaces the protocol's transcript with a ratchet operation code and the given ratchet key.
 func (p *Protocol) ratchet(rak []byte) {
 	p.transcript.Reset()
 	p.combine(opRatchet, rak)
 }
 
-// Combine appends an operation code and a sequence of bit string inputs to the protocol transcript using a recoverable
+// combine appends an operation code and a sequence of bit string inputs to the protocol transcript using a recoverable
 // encoding.
 func (p *Protocol) combine(op byte, inputs ...[]byte) {
 	_, _ = p.transcript.Write([]byte{op})
