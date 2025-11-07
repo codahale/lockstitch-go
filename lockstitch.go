@@ -15,7 +15,6 @@ import (
 	"errors"
 	"math/bits"
 
-	/**/
 	"github.com/ericlagergren/polyval"
 )
 
@@ -64,15 +63,13 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	p.combine(opDerive, []byte(label), leftEncode(uint64(n)*8))
 
 	// Expand a ratchet key and n bytes of PRF output from the transcript.
-	rak := make([]byte, 32)
-	p.expand(rak, "ratchet key")
-	ret, prf := sliceForAppend(dst, n)
-	p.expand(prf, "prf output")
+	rak := p.expand(nil, "ratchet key", 32)
+	prf := p.expand(dst, "prf output", n)
 
 	// Ratchet the transcript with the ratchet key.
 	p.ratchet(rak)
 
-	return ret
+	return prf
 }
 
 // Encrypt encrypts the plaintext using the protocol's current state as the key, then ratchets the protocol's state
@@ -85,24 +82,19 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	p.combine(opCrypt, []byte(label), leftEncode(uint64(len(plaintext))*8))
 
 	// Expand a ratchet key, a data encryption key, and a data authentication key from the transcript.
-	var (
-		rak [32]byte
-		dek [16]byte
-		dak [16]byte
-	)
-	p.expand(rak[:], "ratchet key")
-	p.expand(dek[:], "data encryption key")
-	p.expand(dak[:], "data authentication key")
+	rak := p.expand(nil, "ratchet key", 32)
+	dek := p.expand(nil, "data encryption key", 16)
+	dak := p.expand(nil, "data authentication key", 16)
 
 	// Calculate a POLYVAL authenticator of the plaintext.
-	auth := polyvalAuth(dak[:0], dak[:], plaintext)
+	auth := polyvalAuth(dak[:0], dak, plaintext)
 
 	// Ratchet the transcript with the ratchet key and the authenticator.
-	p.ratchet(append(rak[:], auth...))
+	p.ratchet(append(rak, auth...))
 
 	// Encrypt the plaintext using AES-128-CTR with an all-zero IV.
 	ret, ciphertext := sliceForAppend(dst, len(plaintext))
-	block, _ := aes.NewCipher(dek[:])
+	block, _ := aes.NewCipher(dek)
 	ctr := cipher.NewCTR(block, zeroIV[:])
 	ctr.XORKeyStream(ciphertext, plaintext)
 
@@ -118,26 +110,21 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	p.combine(opCrypt, []byte(label), leftEncode(uint64(len(ciphertext))*8))
 
 	// Expand a ratchet key, a data encryption key, and a data authentication key from the transcript.
-	var (
-		rak [32]byte
-		dek [16]byte
-		dak [16]byte
-	)
-	p.expand(rak[:], "ratchet key")
-	p.expand(dek[:], "data encryption key")
-	p.expand(dak[:], "data authentication key")
+	rak := p.expand(nil, "ratchet key", 32)
+	dek := p.expand(nil, "data encryption key", 16)
+	dak := p.expand(nil, "data authentication key", 16)
 
 	// Decrypt the ciphertext using AES-128-CTR with an all-zero IV.
 	ret, plaintext := sliceForAppend(dst, len(ciphertext))
-	block, _ := aes.NewCipher(dek[:])
+	block, _ := aes.NewCipher(dek)
 	ctr := cipher.NewCTR(block, zeroIV[:])
 	ctr.XORKeyStream(plaintext, ciphertext)
 
 	// Calculate a POLYVAL authenticator of the plaintext.
-	auth := polyvalAuth(dak[:0], dak[:], plaintext)
+	auth := polyvalAuth(dak[:0], dak, plaintext)
 
 	// Ratchet the transcript with the ratchet key and the authenticator.
-	p.ratchet(append(rak[:], auth...))
+	p.ratchet(append(rak, auth...))
 
 	return ret
 }
@@ -156,32 +143,27 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	p.combine(opAuthCrypt, []byte(label), leftEncode(uint64(len(plaintext))*8))
 
 	// Expand a ratchet key, a data encryption key, and a data authentication key from the transcript.
-	var (
-		rak [32]byte
-		dek [16]byte
-		dak [16]byte
-	)
-	p.expand(rak[:], "ratchet key")
-	p.expand(dek[:], "data encryption key")
-	p.expand(dak[:], "data authentication key")
+	rak := p.expand(nil, "ratchet key", 32)
+	dek := p.expand(nil, "data encryption key", 16)
+	dak := p.expand(nil, "data authentication key", 16)
 
 	// Calculate a POLYVAL authenticator of the plaintext.
-	auth := polyvalAuth(dak[:0], dak[:], plaintext)
+	auth := polyvalAuth(dak[:0], dak, plaintext)
 
 	// Ratchet the transcript with the ratchet key and the authenticator.
-	p.ratchet(append(rak[:], auth...))
+	p.ratchet(append(rak, auth...))
 
 	// Expand a ratchet key and an authentication tag.
-	p.expand(rak[:], "ratchet key")
-	p.expand(tag, "authentication tag")
+	rak = p.expand(rak[:0], "ratchet key", len(rak))
+	tag = p.expand(tag[:0], "authentication tag", TagLen)
 
 	// Encrypt the plaintext using AES-128-CTR with the tag as the IV.
-	block, _ := aes.NewCipher(dek[:])
+	block, _ := aes.NewCipher(dek)
 	ctr := cipher.NewCTR(block, tag)
 	ctr.XORKeyStream(ciphertext, plaintext)
 
 	// Ratchet the transcript with the ratchet key.
-	p.ratchet(rak[:])
+	p.ratchet(rak)
 
 	return ret
 }
@@ -200,38 +182,32 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	p.combine(opAuthCrypt, []byte(label), leftEncode(uint64(len(ciphertext))*8))
 
 	// Expand a ratchet key, a data encryption key, and a data authentication key from the transcript.
-	var (
-		rak [32]byte
-		dek [16]byte
-		dak [16]byte
-	)
-	p.expand(rak[:], "ratchet key")
-	p.expand(dek[:], "data encryption key")
-	p.expand(dak[:], "data authentication key")
+	rak := p.expand(nil, "ratchet key", 32)
+	dek := p.expand(nil, "data encryption key", 16)
+	dak := p.expand(nil, "data authentication key", 16)
 
 	// Decrypt the plaintext using AES-128-CTR and using the tag as the IV.
-	block, _ := aes.NewCipher(dek[:])
+	block, _ := aes.NewCipher(dek)
 	ctr := cipher.NewCTR(block, tag)
 	ctr.XORKeyStream(plaintext, ciphertext)
 
 	// Calculate a POLYVAL authenticator of the plaintext.
-	auth := polyvalAuth(dak[:0], dak[:], plaintext)
+	auth := polyvalAuth(dak[:0], dak, plaintext)
 
 	// Ratchet the transcript with the ratchet key and the authenticator.
-	p.ratchet(append(rak[:], auth...))
+	p.ratchet(append(rak, auth...))
 
 	// Expand a ratchet key and a counterfactual authentication tag.
-	var tagP [16]byte
-	p.expand(rak[:], "ratchet key")
-	p.expand(tagP[:], "authentication tag")
+	rak = p.expand(rak[:0], "ratchet key", len(rak))
+	tagP := p.expand(nil, "authentication tag", TagLen)
 
 	// Compare the tag and the counterfactual tag in constant time.
-	if subtle.ConstantTimeCompare(tag, tagP[:]) == 0 {
+	if subtle.ConstantTimeCompare(tag, tagP) == 0 {
 		return nil, ErrInvalidCiphertext
 	}
 
 	// Ratchet the transcript with the ratchet key.
-	p.ratchet(rak[:])
+	p.ratchet(rak)
 
 	return ret, nil
 }
@@ -275,13 +251,15 @@ func (p *Protocol) combine(op byte, inputs ...[]byte) {
 
 // expand clones the protocol's transcript, appends an expand operation code, the label length, the label, and the
 // number of bits of requested output, and fills the out slice with derived data.
-func (p *Protocol) expand(out []byte, label string) {
+func (p *Protocol) expand(dst []byte, label string, n int) []byte {
+	ret, out := sliceForAppend(dst, n)
 	h := *p.transcript // make a copy
 	_, _ = h.Write([]byte{opExpand})
 	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
 	_, _ = h.Write([]byte(label))
 	_, _ = h.Write(rightEncode(uint64(len(out)) * 8))
 	_, _ = h.Read(out)
+	return ret
 }
 
 var zeroIV [aes.BlockSize]byte
