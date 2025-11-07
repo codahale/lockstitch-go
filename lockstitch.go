@@ -272,10 +272,11 @@ func (p *Protocol) combine(op byte, inputs ...[]byte) {
 	}
 }
 
-// expand clones the protocol's transcript, appends an
+// expand clones the protocol's transcript, appends an expand operation code, the label length, the label, and the
+// number of bits of requested output, and fills the out slice with derived data.
 func (p *Protocol) expand(out []byte, label string) {
 	h := *p.transcript // make a copy
-	_, _ = p.transcript.Write([]byte{opExpand})
+	_, _ = h.Write([]byte{opExpand})
 	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
 	_, _ = h.Write([]byte(label))
 	_, _ = h.Write(rightEncode(uint64(len(out)) * 8))
