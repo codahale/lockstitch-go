@@ -3,12 +3,12 @@
 Lockstitch is an incremental, stateful cryptographic primitive for symmetric-key cryptographic operations (e.g. hashing,
 encryption, message authentication codes, and authenticated encryption) in complex protocols. Inspired by TupleHash,
 STROBE, Noise Protocol's stateful objects, Merlin transcripts, and Xoodyak's Cyclist mode, Lockstitch uses
-[cSHAKE128][], [Poly1305][] and [AES-128][] to provide 10+ Gb/sec performance on modern processors at a 128-bit
+[cSHAKE128][], [POLYVAL][] and [AES-128][] to provide 10+ Gb/sec performance on modern processors at a 128-bit
 security level.
 
 [cSHAKE128]: https://csrc.nist.gov/pubs/sp/800/185/final
 
-[Poly1305]: https://datatracker.ietf.org/doc/html/rfc8439
+[POLYVAL]: https://datatracker.ietf.org/doc/html/rfc8452
 
 [AES-128]: https://doi.org/10.6028/NIST.FIPS.197-upd1
 
@@ -142,8 +142,8 @@ function encrypt((transcript, S), label, plaintext):
   transcript = transcript || 0x03 || left_encode(|label|) || label || left_encode(|left_encode(|plaintext|)|) || left_encode(|plaintext|)
   rak = expand((transcript, S), "ratchet key", 256)
   dek = expand((transcript, S), "data encryption key", 128)
-  dak = expand((transcript, S), "data authentication key", 256)
-  auth = Poly1305(dak, plaintext)
+  dak = expand((transcript, S), "data authentication key", 128)
+  auth = POLYVAL(dak, plaintext)
   transcript = ratchet(rak || auth)
   ciphertext = AES128CTR(dek, [0x00; 16], plaintext)
   return ((transcript, S), ciphertext)
@@ -152,9 +152,9 @@ function decrypt((transcript, S), label, ciphertext):
   transcript = transcript || 0x03 || left_encode(|label|) || label || left_encode(|left_encode(|ciphertext|)|) || left_encode(|ciphertext|)
   rak = expand((transcript, S), "ratchet key", 256)
   dek = expand((transcript, S), "data encryption key", 128)
-  dak = expand((transcript, S), "data authentication key", 256)
+  dak = expand((transcript, S), "data authentication key", 128)
   plaintext = AES128CTR(dek, [0x00; 16], ciphertext)
-  auth = Poly1305(dak, plaintext)
+  auth = POLYVAL(dak, plaintext)
   transcript = ratchet(rak || auth)
   return ((transcript, S), plaintext)
 ```
@@ -162,10 +162,11 @@ function decrypt((transcript, S), label, ciphertext):
 `Encrypt` appends an operation code, the label length in bits, the label, and the plaintext length in bits to the
 transcript. It then hashes the transcript with cSHAKE128 (using the customization string established in the `Init`
 operation) and derives three values: `rak`, a 256-bit ratchet key; `dek`, a 128-bit data encryption key; and `dak`, a
-256-bit data authentication key. The data authentication key is used to calculate a Poly1305 authenticator of the
-plaintext. The transcript is relaced with an internal ratchet operation consisting of an operation code, the ratchet key
-length and the Poly1305 authenticator length in bits, the ratchet key, and the Poly1305 authenticator. Finally, the
-plaintext is encrypted with AES-128-CTR using a zero IV, and the new transcript and ciphertext are returned.
+128-bit data authentication key. The data authentication key is used to calculate a POLYVAL authenticator of the
+plaintext, using the same padding scheme as AES-GCM-SIV. The transcript is relaced with an internal ratchet operation
+consisting of an operation code, the ratchet key length and the POLYVAL authenticator length in bits, the ratchet key,
+and the POLYVAL authenticator. Finally, the plaintext is encrypted with AES-128-CTR using a zero IV, and the new
+transcript and ciphertext are returned.
 
 Two points bear mentioning about `Encrypt` and `Decrypt`:
 
@@ -177,8 +178,8 @@ Two points bear mentioning about `Encrypt` and `Decrypt`:
    adversary with an encryption oracle will be able to detect duplicate plaintexts) or IND-CCA secure (i.e. an active
    adversary can produce modified ciphertexts which successfully decrypt).
 
-   That said, the divergent ciphertext input will result in divergent protocol transcripts, as the Poly1305
-   authenticator is eUF-CMA unforgeable.
+   That said, the divergent ciphertext input will result in divergent protocol transcripts, as the POLYVAL authenticator
+   is eUF-CMA unforgeable.
 
    For IND-CPA security, the protocol's state must include a probabilistic value (like a nonce) and for IND-CCA
    security, use [`Seal`/`Open`](#sealopen).
@@ -196,7 +197,7 @@ function seal((transcript, S), label, plaintext):
   rak = expand((transcript, S), "ratchet key", 256)
   dek = expand((transcript, S), "data encryption key", 128)
   dak = expand((transcript, S), "data authentication key", 256)
-  auth = Poly1305(dak, plaintext)
+  auth = POLYVAL(dak, plaintext)
   transcript = ratchet(rak || auth)
   rak = expand((transcript, S), "ratchet key", 256)
   tag = expand((transcript, S), "authentication tag", 128)
@@ -210,7 +211,7 @@ function open((transcript, S), label, ciphertext || tag):
   dek = expand((transcript, S), "data encryption key", 128)
   dak = expand((transcript, S), "data authentication key", 256)
   plaintext = AES128CTR(dek, tag, ciphertext)
-  auth = Poly1305(dak, plaintext)
+  auth = POLYVAL(dak, plaintext)
   transcript = ratchet(rak || auth)
   rak = expand((transcript, S), "ratchet key", 256)
   tag' = expand((transcript, S), "authentication tag", 128)

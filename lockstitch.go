@@ -1,7 +1,7 @@
 // Package lockstitch provides an incremental, stateful cryptographic primitive for symmetric-key cryptographic
 // operations (e.g., hashing, encryption, message authentication codes, and authenticated encryption) in complex
 // protocols. Inspired by TupleHash, STROBE, Noise Protocol's stateful objects, Merlin transcripts, and Xoodyak's
-// Cyclist mode, Lockstitch uses cSHAKE128 (https://csrc.nist.gov/pubs/sp/800/185/final), Poly1305 (RFC 8439), and
+// Cyclist mode, Lockstitch uses cSHAKE128 (https://csrc.nist.gov/pubs/sp/800/185/final), POLYVAL (RFC 8452), and
 // AES-128 (https://doi.org/10.6028/NIST.FIPS.197-upd1) to provide 10+ Gb/sec performance on modern processors at a
 // 128-bit security level.
 package lockstitch
@@ -16,7 +16,8 @@ import (
 	"errors"
 	"math/bits"
 
-	"golang.org/x/crypto/poly1305" //nolint:staticcheck // we're not using Poly1305 incorrectly, ignore deprecation warning
+	/**/
+	"github.com/ericlagergren/polyval"
 )
 
 // TagLen is the number of bytes added to the plaintext by the Seal operation.
@@ -85,16 +86,14 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	var (
 		rak [32]byte
 		dek [16]byte
-		dak [32]byte
+		dak [16]byte
 	)
 	p.expand(rak[:], "ratchet key")
 	p.expand(dek[:], "data encryption key")
 	p.expand(dak[:], "data authentication key")
 
-	// Calculate a Poly1305 authenticator of the plaintext.
-	m := poly1305.New(&dak)
-	_, _ = m.Write(plaintext)
-	auth := m.Sum(dak[:0])
+	// Calculate a POLYVAL authenticator of the plaintext.
+	auth := polyvalAuth(dak[:0], dak[:], plaintext)
 
 	// Ratchet the transcript with the ratchet key and the authenticator.
 	p.ratchet(append(rak[:], auth...))
@@ -120,7 +119,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	var (
 		rak [32]byte
 		dek [16]byte
-		dak [32]byte
+		dak [16]byte
 	)
 	p.expand(rak[:], "ratchet key")
 	p.expand(dek[:], "data encryption key")
@@ -132,10 +131,8 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	ctr := cipher.NewCTR(block, zeroIV[:])
 	ctr.XORKeyStream(plaintext, ciphertext)
 
-	// Calculate a Poly1305 authenticator of the plaintext.
-	m := poly1305.New(&dak)
-	_, _ = m.Write(plaintext)
-	auth := m.Sum(dak[:0])
+	// Calculate a POLYVAL authenticator of the plaintext.
+	auth := polyvalAuth(dak[:0], dak[:], plaintext)
 
 	// Ratchet the transcript with the ratchet key and the authenticator.
 	p.ratchet(append(rak[:], auth...))
@@ -160,16 +157,14 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	var (
 		rak [32]byte
 		dek [16]byte
-		dak [32]byte
+		dak [16]byte
 	)
 	p.expand(rak[:], "ratchet key")
 	p.expand(dek[:], "data encryption key")
 	p.expand(dak[:], "data authentication key")
 
-	// Calculate a Poly1305 authenticator of the plaintext.
-	m := poly1305.New(&dak)
-	_, _ = m.Write(plaintext)
-	auth := m.Sum(dak[:0])
+	// Calculate a POLYVAL authenticator of the plaintext.
+	auth := polyvalAuth(dak[:0], dak[:], plaintext)
 
 	// Ratchet the transcript with the ratchet key and the authenticator.
 	p.ratchet(append(rak[:], auth...))
@@ -206,7 +201,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	var (
 		rak [32]byte
 		dek [16]byte
-		dak [32]byte
+		dak [16]byte
 	)
 	p.expand(rak[:], "ratchet key")
 	p.expand(dek[:], "data encryption key")
@@ -217,10 +212,8 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	ctr := cipher.NewCTR(block, tag)
 	ctr.XORKeyStream(plaintext, ciphertext)
 
-	// Calculate a Poly1305 authenticator of the plaintext.
-	m := poly1305.New(&dak)
-	_, _ = m.Write(plaintext)
-	auth := m.Sum(dak[:0])
+	// Calculate a POLYVAL authenticator of the plaintext.
+	auth := polyvalAuth(dak[:0], dak[:], plaintext)
 
 	// Ratchet the transcript with the ratchet key and the authenticator.
 	p.ratchet(append(rak[:], auth...))
@@ -345,4 +338,31 @@ func sliceForAppend(in []byte, n int) (head, tail []byte) {
 	}
 	tail = head[len(in):]
 	return
+}
+
+// polyvalAuth pads the given message using the same scheme as AES-GCM-SIV and calculates a POLYVAL authenticator of it.
+func polyvalAuth(dst, key, message []byte) []byte {
+	length := make([]byte, 16)
+	binary.LittleEndian.PutUint64(length[8:16], uint64(len(message))*8)
+
+	p, err := polyval.New(key)
+	if err != nil {
+		panic(err)
+	}
+	padS(p, message)
+	p.Update(length)
+	return p.Sum(dst[:0])
+}
+
+func padS(p *polyval.Polyval, src []byte) {
+	if len(src) >= 16 {
+		n := len(src) &^ (16 - 1)
+		p.Update(src[:n])
+		src = src[n:]
+	}
+	if len(src) > 0 {
+		dst := make([]byte, 16)
+		copy(dst, src)
+		p.Update(dst)
+	}
 }
