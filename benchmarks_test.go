@@ -1,17 +1,19 @@
-package lockstitch
+package lockstitch_test
 
 import (
 	"testing"
+
+	"github.com/codahale/lockstitch-go"
 )
 
 func BenchmarkInit(b *testing.B) {
 	for b.Loop() {
-		NewProtocol("mix")
+		lockstitch.NewProtocol("mix")
 	}
 }
 
 func BenchmarkMix(b *testing.B) {
-	p := NewProtocol("mix")
+	p := lockstitch.NewProtocol("mix")
 	label := "label"
 	input := []byte("input")
 	for b.Loop() {
@@ -20,7 +22,7 @@ func BenchmarkMix(b *testing.B) {
 }
 
 func BenchmarkDerive(b *testing.B) {
-	p := NewProtocol("derive")
+	p := lockstitch.NewProtocol("derive")
 	label := "label"
 	output := make([]byte, 32)
 	for b.Loop() {
@@ -29,7 +31,7 @@ func BenchmarkDerive(b *testing.B) {
 }
 
 func BenchmarkEncrypt(b *testing.B) {
-	p := NewProtocol("encrypt")
+	p := lockstitch.NewProtocol("encrypt")
 	label := "label"
 	output := make([]byte, 32)
 	for b.Loop() {
@@ -38,7 +40,7 @@ func BenchmarkEncrypt(b *testing.B) {
 }
 
 func BenchmarkDecrypt(b *testing.B) {
-	p := NewProtocol("decrypt")
+	p := lockstitch.NewProtocol("decrypt")
 	label := "label"
 	output := make([]byte, 32)
 	for b.Loop() {
@@ -47,9 +49,9 @@ func BenchmarkDecrypt(b *testing.B) {
 }
 
 func BenchmarkSeal(b *testing.B) {
-	p := NewProtocol("seal")
+	p := lockstitch.NewProtocol("seal")
 	label := "label"
-	output := make([]byte, 32+TagLen)
+	output := make([]byte, 32+lockstitch.TagLen)
 	for b.Loop() {
 		p.Seal(label, output[:0], output[:32])
 	}
@@ -59,11 +61,11 @@ func BenchmarkOpen(b *testing.B) {
 	label := "label"
 
 	output := make([]byte, 32)
-	p := NewProtocol("open")
+	p := lockstitch.NewProtocol("open")
 	ciphertext := p.Seal(label, nil, output)
 
 	for b.Loop() {
-		p := NewProtocol("open")
+		p := lockstitch.NewProtocol("open")
 		if _, err := p.Open(label, output[:0], ciphertext); err != nil {
 			b.Fatal(err)
 		}
@@ -72,7 +74,7 @@ func BenchmarkOpen(b *testing.B) {
 
 func BenchmarkHash(b *testing.B) {
 	hash := func(message []byte) []byte {
-		protocol := NewProtocol("hash")
+		protocol := lockstitch.NewProtocol("hash")
 		protocol.Mix("message", message)
 		return protocol.Derive("digest", nil, 32)
 	}
@@ -91,7 +93,7 @@ func BenchmarkHash(b *testing.B) {
 func BenchmarkPRF(b *testing.B) {
 	key := make([]byte, 32)
 	prf := func(output []byte) []byte {
-		protocol := NewProtocol("prf")
+		protocol := lockstitch.NewProtocol("prf")
 		protocol.Mix("key", key)
 		return protocol.Derive("output", output[:0], len(output))
 	}
@@ -111,7 +113,7 @@ func BenchmarkStream(b *testing.B) {
 	key := make([]byte, 32)
 	nonce := make([]byte, 16)
 	stream := func(message []byte) []byte {
-		protocol := NewProtocol("stream")
+		protocol := lockstitch.NewProtocol("stream")
 		protocol.Mix("key", key)
 		protocol.Mix("nonce", nonce)
 		return protocol.Encrypt("message", message[:0], message)
@@ -133,7 +135,7 @@ func BenchmarkAEAD(b *testing.B) {
 	nonce := make([]byte, 16)
 	ad := make([]byte, 32)
 	aead := func(message []byte) []byte {
-		protocol := NewProtocol("aead")
+		protocol := lockstitch.NewProtocol("aead")
 		protocol.Mix("key", key)
 		protocol.Mix("nonce", nonce)
 		protocol.Mix("ad", ad)
@@ -142,7 +144,7 @@ func BenchmarkAEAD(b *testing.B) {
 
 	for _, length := range lengths {
 		b.Run(length.name, func(b *testing.B) {
-			output := make([]byte, length.n+TagLen)
+			output := make([]byte, length.n+lockstitch.TagLen)
 			b.SetBytes(int64(len(output)))
 			for b.Loop() {
 				aead(output)
@@ -151,6 +153,7 @@ func BenchmarkAEAD(b *testing.B) {
 	}
 }
 
+//nolint:gochecknoglobals // this is fine
 var lengths = []struct {
 	name string
 	n    int

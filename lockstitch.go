@@ -11,11 +11,10 @@ import (
 	"crypto/cipher"
 	"crypto/sha3"
 	"crypto/subtle"
-	"encoding/binary"
 	"errors"
-	"math/bits"
 
-	"github.com/ericlagergren/polyval"
+	"github.com/codahale/lockstitch-go/internal/polyval"
+	"github.com/codahale/lockstitch-go/internal/tuplehash"
 )
 
 // TagLen is the number of bytes added to the plaintext by the Seal operation.
@@ -60,7 +59,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	}
 
 	// Append the operation metadata to the transcript in a recoverable encoding.
-	p.combine(opDerive, []byte(label), leftEncode(uint64(n)*8))
+	p.combine(opDerive, []byte(label), tuplehash.LeftEncode(uint64(n)*8))
 
 	// Expand n bytes of PRF output from the transcript.
 	prf := p.expand(dst, "prf output", n)
@@ -81,17 +80,17 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	ret, ciphertext := sliceForAppend(dst, len(plaintext))
 
 	// Append the operation metadata to the transcript.
-	p.combine(opCrypt, []byte(label), leftEncode(uint64(len(plaintext))*8))
+	p.combine(opCrypt, []byte(label), tuplehash.LeftEncode(uint64(len(plaintext))*8))
 
 	// Expand a data encryption key and a data authentication key from the transcript.
 	dek := p.expand(nil, "data encryption key", 16)
 	dak := p.expand(nil, "data authentication key", 16)
 
 	// Calculate a POLYVAL authenticator of the plaintext.
-	auth := polyvalAuth(dak[:0], dak, plaintext)
+	auth := polyval.Authenticator(dak[:0], dak, plaintext)
 
 	// Append the operation data (i.e., the POLYVAL authenticator) to the transcript.
-	_, _ = p.transcript.Write(leftEncode(uint64(len(auth)) * 8))
+	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(auth)) * 8))
 	_, _ = p.transcript.Write(auth)
 
 	// Ratchet the transcript.
@@ -114,7 +113,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	ret, plaintext := sliceForAppend(dst, len(ciphertext))
 
 	// Append the operation metadata to the transcript.
-	p.combine(opCrypt, []byte(label), leftEncode(uint64(len(ciphertext))*8))
+	p.combine(opCrypt, []byte(label), tuplehash.LeftEncode(uint64(len(ciphertext))*8))
 
 	// Expand a data encryption key and a data authentication key from the transcript.
 	dek := p.expand(nil, "data encryption key", 16)
@@ -126,10 +125,10 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	ctr.XORKeyStream(plaintext, ciphertext)
 
 	// Calculate a POLYVAL authenticator of the plaintext.
-	auth := polyvalAuth(dak[:0], dak, plaintext)
+	auth := polyval.Authenticator(dak[:0], dak, plaintext)
 
 	// Append the operation data (i.e., the POLYVAL authenticator) to the transcript.
-	_, _ = p.transcript.Write(leftEncode(uint64(len(auth)) * 8))
+	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(auth)) * 8))
 	_, _ = p.transcript.Write(auth)
 
 	// Ratchet the transcript.
@@ -150,17 +149,17 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	ciphertext, tag := ciphertext[:len(plaintext)], ciphertext[len(plaintext):]
 
 	// Append the operation metadata to the transcript.
-	p.combine(opAuthCrypt, []byte(label), leftEncode(uint64(len(plaintext))*8))
+	p.combine(opAuthCrypt, []byte(label), tuplehash.LeftEncode(uint64(len(plaintext))*8))
 
 	// Expand a data encryption key and a data authentication key from the transcript.
 	dek := p.expand(nil, "data encryption key", 16)
 	dak := p.expand(nil, "data authentication key", 16)
 
 	// Calculate a POLYVAL authenticator of the plaintext.
-	auth := polyvalAuth(dak[:0], dak, plaintext)
+	auth := polyval.Authenticator(dak[:0], dak, plaintext)
 
 	// Append the operation data (i.e., the POLYVAL authenticator) to the transcript.
-	_, _ = p.transcript.Write(leftEncode(uint64(len(auth)) * 8))
+	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(auth)) * 8))
 	_, _ = p.transcript.Write(auth)
 
 	// Expand an authentication tag.
@@ -189,7 +188,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	ret, plaintext := sliceForAppend(dst, len(ciphertext))
 
 	// Append the operation metadata to the transcript.
-	p.combine(opAuthCrypt, []byte(label), leftEncode(uint64(len(ciphertext))*8))
+	p.combine(opAuthCrypt, []byte(label), tuplehash.LeftEncode(uint64(len(ciphertext))*8))
 
 	// Expand a data encryption key and a data authentication key from the transcript.
 	dek := p.expand(nil, "data encryption key", 16)
@@ -201,10 +200,10 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	ctr.XORKeyStream(plaintext, ciphertext)
 
 	// Calculate a POLYVAL authenticator of the unauthenticated plaintext.
-	auth := polyvalAuth(dak[:0], dak, plaintext)
+	auth := polyval.Authenticator(dak[:0], dak, plaintext)
 
 	// Append the operation data (i.e., the POLYVAL authenticator) to the transcript.
-	_, _ = p.transcript.Write(leftEncode(uint64(len(auth)) * 8))
+	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(auth)) * 8))
 	_, _ = p.transcript.Write(auth)
 
 	// Expand a counterfactual authentication tag.
@@ -253,7 +252,7 @@ func (p *Protocol) ratchet() {
 func (p *Protocol) combine(op byte, inputs ...[]byte) {
 	_, _ = p.transcript.Write([]byte{op})
 	for _, input := range inputs {
-		_, _ = p.transcript.Write(leftEncode(uint64(len(input)) * 8))
+		_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(input)) * 8))
 		_, _ = p.transcript.Write(input)
 	}
 }
@@ -264,9 +263,9 @@ func (p *Protocol) expand(dst []byte, label string, n int) []byte {
 	ret, out := sliceForAppend(dst, n)
 	h := p.transcript // make a copy
 	_, _ = h.Write([]byte{opExpand})
-	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
+	_, _ = h.Write(tuplehash.LeftEncode(uint64(len(label)) * 8))
 	_, _ = h.Write([]byte(label))
-	_, _ = h.Write(rightEncode(uint64(len(out)) * 8))
+	_, _ = h.Write(tuplehash.RightEncode(uint64(len(out)) * 8))
 	_, _ = h.Read(out)
 	return ret
 }
@@ -280,28 +279,6 @@ const (
 	opRatchet   = 0x06
 )
 
-// leftEncode encodes an integer value using NIST SP 800-185's left_encode.
-//
-// https://www.nist.gov/publications/sha-3-derived-functions-cshake-kmac-tuplehash-and-parallelhash
-func leftEncode(value uint64) []byte {
-	var buf [9]byte
-	binary.BigEndian.PutUint64(buf[1:], value)
-	n := max(len(buf)-1-(bits.LeadingZeros64(value)/8), 1)
-	buf[len(buf)-n-1] = byte(n)
-	return buf[len(buf)-n-1:]
-}
-
-// rightEncode encodes an integer value using NIST SP 800-185's right_encode.
-//
-// https://www.nist.gov/publications/sha-3-derived-functions-cshake-kmac-tuplehash-and-parallelhash
-func rightEncode(value uint64) []byte {
-	var buf [9]byte
-	binary.BigEndian.PutUint64(buf[:8], value)
-	n := max(len(buf)-1-(bits.LeadingZeros64(value)/8), 1)
-	buf[len(buf)-1] = byte(n)
-	return buf[len(buf)-n-1:]
-}
-
 // sliceForAppend takes a slice and a requested number of bytes. It returns a slice with the contents of the given slice
 // followed by that many bytes and a second slice that aliases into it and contains only the extra bytes. If the
 // original slice has sufficient capacity, then no allocation is performed.
@@ -313,34 +290,5 @@ func sliceForAppend(in []byte, n int) (head, tail []byte) {
 		copy(head, in)
 	}
 	tail = head[len(in):]
-	return
-}
-
-// polyvalAuth pads the given message using the same scheme as AES-GCM-SIV and calculates a POLYVAL authenticator of it.
-func polyvalAuth(dst, key, message []byte) []byte {
-	n := len(message)
-	block := make([]byte, 16)
-
-	p, _ := polyval.New(key)
-
-	// Hash all full blocks.
-	if len(message) >= 16 {
-		m := len(message) &^ (16 - 1)
-		p.Update(message[:m])
-		message = message[m:]
-	}
-
-	// Pad final message block with zeros.
-	if len(message) > 0 {
-		copy(block, message)
-		p.Update(block)
-	}
-
-	// Hash a final block with the message length. The first eight bytes are zero because, unlike AES-GCM-SIV, there is
-	// no authenticated data.
-	binary.LittleEndian.PutUint64(block[:8], 0)
-	binary.LittleEndian.PutUint64(block[8:], uint64(n)*8)
-	p.Update(block)
-
-	return p.Sum(dst[:0])
+	return head, tail
 }
