@@ -26,7 +26,7 @@ var (
 	// wrong key.
 	ErrInvalidCiphertext = errors.New("lockstitch: invalid ciphertext")
 
-	// ErrInvalidState is returned when a protocol's state cannot be unmarshalled successfully, either due to malformed
+	// ErrInvalidState is returned when a protocol's state cannot be unmarshalled, either due to malformed
 	// data or an incorrect protocol domain.
 	ErrInvalidState = errors.New("lockstitch: invalid protocol state")
 )
@@ -80,7 +80,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	// Append the operation metadata to the transcript.
 	p.combine(opCrypt, []byte(label), leftEncode(uint64(len(plaintext))*8))
 
-	// Expand a data encryption key, and a data authentication key from the transcript.
+	// Expand a data encryption key and a data authentication key from the transcript.
 	dek := p.expand(nil, "data encryption key", 16)
 	dak := p.expand(nil, "data authentication key", 16)
 
@@ -111,7 +111,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	// Append the operation metadata to the transcript.
 	p.combine(opCrypt, []byte(label), leftEncode(uint64(len(ciphertext))*8))
 
-	// Expand a data encryption key, and a data authentication key from the transcript.
+	// Expand a data encryption key and a data authentication key from the transcript.
 	dek := p.expand(nil, "data encryption key", 16)
 	dak := p.expand(nil, "data authentication key", 16)
 
@@ -189,12 +189,12 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	dek := p.expand(nil, "data encryption key", 16)
 	dak := p.expand(nil, "data authentication key", 16)
 
-	// Decrypt the plaintext using AES-128-CTR and using the tag as the IV.
+	// Decrypt the plaintext using AES-128-CTR with the tag as the IV.
 	block, _ := aes.NewCipher(dek)
 	ctr := cipher.NewCTR(block, tag)
 	ctr.XORKeyStream(plaintext, ciphertext)
 
-	// Calculate a POLYVAL authenticator of the plaintext.
+	// Calculate a POLYVAL authenticator of the unauthenticated plaintext.
 	auth := polyvalAuth(dak[:0], dak, plaintext)
 
 	// Append the operation data (i.e., the POLYVAL authenticator) to the transcript.
@@ -254,7 +254,7 @@ func (p *Protocol) combine(op byte, inputs ...[]byte) {
 }
 
 // expand clones the protocol's transcript, appends an expand operation code, the label length, the label, and the
-// number of bits of requested output, and fills the out slice with derived data.
+// requested output length, and fills the out slice with derived data.
 func (p *Protocol) expand(dst []byte, label string, n int) []byte {
 	ret, out := sliceForAppend(dst, n)
 	h := p.transcript // make a copy
