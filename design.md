@@ -84,11 +84,19 @@ function expand((transcript, S), label, n):
   return cSHAKE128(X=transcript || 0x05 || left_encode(|label|) || label || right_encode(n), L=n, N="", S)
 ```
 
+`expand` appends an operation code, label length, label, and output length to a copy of the protocol's transcript,
+hashes it with cSHAKE128, and returns the requested number of bits of XOF output. Each `expand` call can be modeled as a
+random oracle.
+
 ```text
 function ratchet((transcript, S)):
   rak = expand((transcript, S), "ratchet key", 256)
   return 0x06 || left_encode(|rak|) || rak
 ```
+
+`ratchet` expands a 256-bit ratchet key from the protocol's transcript, then replaces the transcript with an operation
+code, the ratchet key length, and the ratchet key. By replacing the transcript with derived output, `Derive` ensures
+forward secrecy.
 
 ```text
 function Derive((transcript, S), label, n):
@@ -106,8 +114,8 @@ operation) and expands `n` bits of PRF output to return. Finally, the transcript
 
 #### KDF Security
 
-A sequence of `Mix` operations followed by a `Derive` operation (or other operations which produce output) is
-effectively the construction of an cSHAKE128 input string using a recoverable encoding (i.e., one that can be
+A sequence of `Mix` operations followed by a `Derive` operation (or other operations which produce output via `expand`)
+is effectively the construction of an cSHAKE128 input string using a recoverable encoding (i.e., one that can be
 unambiguously parsed left-to-right) which includes the XOF output length. Given SHAKE128's security claim of being
 indistinguishable from a random oracle up to a computational complexity of ~128 bits, this construction maps directly
 to [Backendal et al.'s RO-KDF construction][n-KDFs] and is a KDF-secure XOF-n-KDF. If any one of the inputs is
@@ -161,19 +169,19 @@ function Decrypt((transcript, S), label, ciphertext):
 transcript. It then hashes the transcript with cSHAKE128 (using the customization string established in the `Init`
 operation) and derives two values: `dek`, a 128-bit data encryption key; and `dak`, a 128-bit data authentication key.
 The data authentication key is used to calculate a POLYVAL authenticator of the plaintext, using the same padding scheme
-as AES-GCM-SIV. The authenticator length and the authenticator are appended to the transcript, and the transcript is
-ratcheted. Finally, the plaintext is encrypted with AES-128-CTR using a zero IV, and the new transcript and ciphertext
-are returned.
+as AES-GCM-SIV (with a hard-coded length of zero bits of authenticated data). The authenticator length and the
+authenticator are appended to the transcript, and the transcript is ratcheted. Finally, the plaintext is encrypted with
+AES-128-CTR using a zero IV, and the new transcript and ciphertext are returned.
 
 Two points bear mentioning about `Encrypt` and `Decrypt`:
 
 1. Both `Encrypt` and `Decrypt` use the same operation code to ensure protocols have the same state after both
    encrypting and decrypting data.
 2. `Encrypt` operations provide no authentication by themselves. An attacker can modify a ciphertext and the `Decrypt`
-   operation will return a plaintext which was never encrypted. Alone, they are EAV secure (i.e., a passive adversary
-   will not be able to read plaintext without knowing the protocol's state) but not IND-CPA secure (i.e., an active
-   adversary with an encryption oracle will be able to detect duplicate plaintexts) or IND-CCA secure (i.e., an active
-   adversary can produce modified ciphertexts which successfully decrypt).
+   operation will return a plaintext which was never encrypted. A passive adversary will not be able to read the
+   plaintext without knowing the protocol's transcript (i.e., EAV secure). An active attacker with a decryption oracle
+   will be able to detect duplicate plaintexts (i.e., not IND-CPA secure) and produce modified ciphertexts which
+   successfully decrypt (i.e., not IND-CCA secure).
 
    That said, the divergent ciphertext input will result in divergent protocol transcripts, as the POLYVAL authenticator
    is eUF-CMA unforgeable.
@@ -181,12 +189,10 @@ Two points bear mentioning about `Encrypt` and `Decrypt`:
    For IND-CPA security, the protocol's state must include a probabilistic value (like a nonce) and for IND-CCA
    security, use [`Seal`/`Open`](#sealopen).
 
----
-
 ### `Seal`/`Open`
 
 `Seal` and `Open` operations extend the `Encrypt` and `Decrypt` operations with the inclusion of a 128-bit
-authentication tag with the ciphertext. The `Seal` operation verifies the tag, returning an error if the tag is invalid.
+authentication tag. The `Seal` operation verifies the tag, returning an error if the tag is invalid.
 
 ```text
 function Seal((transcript, S), label, plaintext):
