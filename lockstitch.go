@@ -202,7 +202,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	_, _ = p.transcript.Write(auth)
 
 	// Expand a counterfactual authentication tag.
-	tagP := p.expand(nil, "authentication tag", TagLen)
+	tagP := p.expand(dak[:0], "authentication tag", TagLen)
 
 	// Ratchet the transcript.
 	p.ratchet()
