@@ -77,6 +77,9 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 // To reuse plaintext's storage for the encrypted output, use plaintext[:0] as dst. Otherwise, the remaining capacity of
 // dst must not overlap plaintext.
 func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
+	// Allocate a slice for the plaintext.
+	ret, ciphertext := sliceForAppend(dst, len(plaintext))
+
 	// Append the operation metadata to the transcript.
 	p.combine(opCrypt, []byte(label), leftEncode(uint64(len(plaintext))*8))
 
@@ -95,7 +98,6 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	p.ratchet()
 
 	// Encrypt the plaintext using AES-128-CTR with an all-zero IV.
-	ret, ciphertext := sliceForAppend(dst, len(plaintext))
 	block, _ := aes.NewCipher(dek)
 	ctr := cipher.NewCTR(block, make([]byte, aes.BlockSize))
 	ctr.XORKeyStream(ciphertext, plaintext)
@@ -108,6 +110,9 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 // ciphertext's storage for the decrypted output, use ciphertext[:0] as dst. Otherwise, the remaining capacity of dst
 // must not overlap ciphertext.
 func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
+	// Allocate a slice for the plaintext.
+	ret, plaintext := sliceForAppend(dst, len(ciphertext))
+
 	// Append the operation metadata to the transcript.
 	p.combine(opCrypt, []byte(label), leftEncode(uint64(len(ciphertext))*8))
 
@@ -116,7 +121,6 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	dak := p.expand(nil, "data authentication key", 16)
 
 	// Decrypt the ciphertext using AES-128-CTR with an all-zero IV.
-	ret, plaintext := sliceForAppend(dst, len(ciphertext))
 	block, _ := aes.NewCipher(dek)
 	ctr := cipher.NewCTR(block, make([]byte, aes.BlockSize))
 	ctr.XORKeyStream(plaintext, ciphertext)
@@ -141,6 +145,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 // To reuse plaintext's storage for the encrypted output, use plaintext[:0] as dst. Otherwise, the remaining capacity of
 // dst must not overlap plaintext.
 func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
+	// Allocate a slice for the ciphertext split it between ciphertext and tag.
 	ret, ciphertext := sliceForAppend(dst, len(plaintext)+TagLen)
 	ciphertext, tag := ciphertext[:len(plaintext)], ciphertext[len(plaintext):]
 
@@ -179,6 +184,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 // To reuse ciphertext's storage for the decrypted output, use ciphertext[:0] as dst. Otherwise, the remaining capacity
 // of dst must not overlap ciphertext.
 func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
+	// Allocate a slice for the plaintext split the ciphertext between ciphertext and tag.
 	ciphertext, tag := ciphertext[:len(ciphertext)-TagLen], ciphertext[len(ciphertext)-TagLen:]
 	ret, plaintext := sliceForAppend(dst, len(ciphertext))
 
@@ -211,7 +217,6 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	if subtle.ConstantTimeCompare(tag, tagP) == 0 {
 		return nil, ErrInvalidCiphertext
 	}
-
 	return ret, nil
 }
 
