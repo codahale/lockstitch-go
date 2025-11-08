@@ -34,14 +34,14 @@ var (
 // A Protocol is a stateful object providing fine-grained symmetric-key cryptographic services like hashing, message
 // authentication codes, pseudo-random functions, authenticated encryption, and more.
 type Protocol struct {
-	transcript *sha3.SHAKE
+	transcript sha3.SHAKE
 }
 
 // NewProtocol creates a new Protocol with the given domain separation string.
 func NewProtocol(domain string) Protocol {
 	// Initialize a cSHAKE128 instance with a customization string of `lockstitch:{domain}`.
 	return Protocol{
-		transcript: sha3.NewCSHAKE128(nil, append([]byte("lockstitch:"), []byte(domain)...)),
+		transcript: *sha3.NewCSHAKE128(nil, append([]byte("lockstitch:"), []byte(domain)...)),
 	}
 }
 
@@ -232,8 +232,7 @@ func (p *Protocol) UnmarshalBinary(data []byte) error {
 
 // Clone returns an exact clone of the receiver Protocol.
 func (p *Protocol) Clone() Protocol {
-	t := *p.transcript
-	return Protocol{transcript: &t}
+	return *p
 }
 
 // ratchet replaces the protocol's transcript with a ratchet operation code and a ratchet key derived from the previous
@@ -258,7 +257,7 @@ func (p *Protocol) combine(op byte, inputs ...[]byte) {
 // number of bits of requested output, and fills the out slice with derived data.
 func (p *Protocol) expand(dst []byte, label string, n int) []byte {
 	ret, out := sliceForAppend(dst, n)
-	h := *p.transcript // make a copy
+	h := p.transcript // make a copy
 	_, _ = h.Write([]byte{opExpand})
 	_, _ = h.Write(leftEncode(uint64(len(label)) * 8))
 	_, _ = h.Write([]byte(label))
