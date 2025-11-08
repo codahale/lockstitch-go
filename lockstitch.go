@@ -15,6 +15,7 @@ import (
 
 	"github.com/codahale/lockstitch-go/internal/polyval"
 	"github.com/codahale/lockstitch-go/internal/tuplehash"
+	mem "github.com/ericlagergren/subtle"
 )
 
 // TagLen is the number of bytes added to the plaintext by the Seal operation.
@@ -77,7 +78,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 // dst must not overlap plaintext.
 func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	// Allocate a slice for the plaintext.
-	ret, ciphertext := sliceForAppend(dst, len(plaintext))
+	ret, ciphertext := mem.SliceForAppend(dst, len(plaintext))
 
 	// Append the operation metadata to the transcript.
 	p.combine(opCrypt, []byte(label), tuplehash.LeftEncode(uint64(len(plaintext))*8))
@@ -110,7 +111,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 // must not overlap ciphertext.
 func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	// Allocate a slice for the plaintext.
-	ret, plaintext := sliceForAppend(dst, len(ciphertext))
+	ret, plaintext := mem.SliceForAppend(dst, len(ciphertext))
 
 	// Append the operation metadata to the transcript.
 	p.combine(opCrypt, []byte(label), tuplehash.LeftEncode(uint64(len(ciphertext))*8))
@@ -145,7 +146,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 // dst must not overlap plaintext.
 func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	// Allocate a slice for the ciphertext split it between ciphertext and tag.
-	ret, ciphertext := sliceForAppend(dst, len(plaintext)+TagLen)
+	ret, ciphertext := mem.SliceForAppend(dst, len(plaintext)+TagLen)
 	ciphertext, tag := ciphertext[:len(plaintext)], ciphertext[len(plaintext):]
 
 	// Append the operation metadata to the transcript.
@@ -185,7 +186,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	// Allocate a slice for the plaintext split the ciphertext between ciphertext and tag.
 	ciphertext, tag := ciphertext[:len(ciphertext)-TagLen], ciphertext[len(ciphertext)-TagLen:]
-	ret, plaintext := sliceForAppend(dst, len(ciphertext))
+	ret, plaintext := mem.SliceForAppend(dst, len(ciphertext))
 
 	// Append the operation metadata to the transcript.
 	p.combine(opAuthCrypt, []byte(label), tuplehash.LeftEncode(uint64(len(ciphertext))*8))
@@ -260,7 +261,7 @@ func (p *Protocol) combine(op byte, inputs ...[]byte) {
 // expand clones the protocol's transcript, appends an expand operation code, the label length, the label, and the
 // requested output length, and fills the out slice with derived data.
 func (p *Protocol) expand(dst []byte, label string, n int) []byte {
-	ret, out := sliceForAppend(dst, n)
+	ret, out := mem.SliceForAppend(dst, n)
 	h := p.transcript // make a copy
 	_, _ = h.Write([]byte{opExpand})
 	_, _ = h.Write(tuplehash.LeftEncode(uint64(len(label)) * 8))
@@ -278,17 +279,3 @@ const (
 	opExpand    = 0x05
 	opRatchet   = 0x06
 )
-
-// sliceForAppend takes a slice and a requested number of bytes. It returns a slice with the contents of the given slice
-// followed by that many bytes and a second slice that aliases into it and contains only the extra bytes. If the
-// original slice has sufficient capacity, then no allocation is performed.
-func sliceForAppend(in []byte, n int) (head, tail []byte) {
-	if total := len(in) + n; cap(in) >= total {
-		head = in[:total]
-	} else {
-		head = make([]byte, total)
-		copy(head, in)
-	}
-	tail = head[len(in):]
-	return head, tail
-}
