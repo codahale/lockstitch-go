@@ -97,7 +97,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	// Encrypt the plaintext using AES-128-CTR with an all-zero IV.
 	ret, ciphertext := sliceForAppend(dst, len(plaintext))
 	block, _ := aes.NewCipher(dek)
-	ctr := cipher.NewCTR(block, zeroIV[:])
+	ctr := cipher.NewCTR(block, make([]byte, aes.BlockSize))
 	ctr.XORKeyStream(ciphertext, plaintext)
 
 	return ret
@@ -118,7 +118,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	// Decrypt the ciphertext using AES-128-CTR with an all-zero IV.
 	ret, plaintext := sliceForAppend(dst, len(ciphertext))
 	block, _ := aes.NewCipher(dek)
-	ctr := cipher.NewCTR(block, zeroIV[:])
+	ctr := cipher.NewCTR(block, make([]byte, aes.BlockSize))
 	ctr.XORKeyStream(plaintext, ciphertext)
 
 	// Calculate a POLYVAL authenticator of the plaintext.
@@ -265,8 +265,6 @@ func (p *Protocol) expand(dst []byte, label string, n int) []byte {
 	_, _ = h.Read(out)
 	return ret
 }
-
-var zeroIV [aes.BlockSize]byte
 
 const (
 	opMix       = 0x01
