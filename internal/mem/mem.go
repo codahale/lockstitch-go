@@ -11,5 +11,5 @@ func SliceForAppend(in []byte, n int) (head, tail []byte) {
 		copy(head, in)
 	}
 	tail = head[len(in):]
-	return
+	return head, tail
 }
