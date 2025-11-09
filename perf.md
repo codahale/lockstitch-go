@@ -39,7 +39,7 @@ BenchmarkAEAD/1MiB-4                5782            205741 ns/op        5096.67 
 ## `arm64` (Apple MacBook Pro `Mac16,7` M4 Pro, macOS 26.1, Go 1.25,4)
 
 ```text
-goos: darwin                                                                                                                                                                                                                                         
+goos: darwin
 goarch: arm64
 pkg: github.com/codahale/lockstitch-go
 cpu: Apple M4 Pro
