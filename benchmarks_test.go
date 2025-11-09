@@ -87,8 +87,6 @@ func BenchmarkOpen(b *testing.B) {
 }
 
 func BenchmarkHash(b *testing.B) {
-	b.ReportAllocs()
-
 	hash := func(message []byte) []byte {
 		protocol := lockstitch.NewProtocol("hash")
 		protocol.Mix("message", message)
@@ -98,6 +96,7 @@ func BenchmarkHash(b *testing.B) {
 	for _, length := range lengths {
 		b.Run(length.name, func(b *testing.B) {
 			input := make([]byte, length.n)
+			b.ReportAllocs()
 			b.SetBytes(int64(len(input)))
 			for b.Loop() {
 				hash(input)
@@ -107,8 +106,6 @@ func BenchmarkHash(b *testing.B) {
 }
 
 func BenchmarkPRF(b *testing.B) {
-	b.ReportAllocs()
-
 	key := make([]byte, 32)
 	prf := func(output []byte) []byte {
 		protocol := lockstitch.NewProtocol("prf")
@@ -119,6 +116,7 @@ func BenchmarkPRF(b *testing.B) {
 	for _, length := range lengths {
 		b.Run(length.name, func(b *testing.B) {
 			output := make([]byte, length.n)
+			b.ReportAllocs()
 			b.SetBytes(int64(len(output)))
 			for b.Loop() {
 				prf(output)
@@ -128,8 +126,6 @@ func BenchmarkPRF(b *testing.B) {
 }
 
 func BenchmarkStream(b *testing.B) {
-	b.ReportAllocs()
-
 	key := make([]byte, 32)
 	nonce := make([]byte, 16)
 	stream := func(message []byte) []byte {
@@ -142,6 +138,7 @@ func BenchmarkStream(b *testing.B) {
 	for _, length := range lengths {
 		b.Run(length.name, func(b *testing.B) {
 			output := make([]byte, length.n)
+			b.ReportAllocs()
 			b.SetBytes(int64(len(output)))
 			for b.Loop() {
 				stream(output)
@@ -151,8 +148,6 @@ func BenchmarkStream(b *testing.B) {
 }
 
 func BenchmarkAEAD(b *testing.B) {
-	b.ReportAllocs()
-
 	key := make([]byte, 32)
 	nonce := make([]byte, 16)
 	ad := make([]byte, 32)
@@ -167,6 +162,7 @@ func BenchmarkAEAD(b *testing.B) {
 	for _, length := range lengths {
 		b.Run(length.name, func(b *testing.B) {
 			output := make([]byte, length.n+lockstitch.TagLen)
+			b.ReportAllocs()
 			b.SetBytes(int64(len(output)))
 			for b.Loop() {
 				aead(output)
