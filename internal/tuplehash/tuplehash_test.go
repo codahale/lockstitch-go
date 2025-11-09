@@ -10,56 +10,40 @@ import (
 func TestLeftEncode(t *testing.T) {
 	t.Parallel()
 
-	if got, want := tuplehash.LeftEncode(0), []byte{1, 0}; !bytes.Equal(got, want) {
-		t.Errorf("tuplehash.LeftEncode(0) = %v, want = %v", got, want)
-	}
-
-	if got, want := tuplehash.LeftEncode(128), []byte{1, 128}; !bytes.Equal(got, want) {
-		t.Errorf("tuplehash.LeftEncode(128) = %v, want = %v", got, want)
-	}
-
-	if got, want := tuplehash.LeftEncode(65536), []byte{3, 1, 0, 0}; !bytes.Equal(got, want) {
-		t.Errorf("tuplehash.LeftEncode(65536) = %v, want = %v", got, want)
-	}
-
-	if got, want := tuplehash.LeftEncode(4096), []byte{2, 16, 0}; !bytes.Equal(got, want) {
-		t.Errorf("tuplehash.LeftEncode(4096) = %v, want = %v", got, want)
-	}
-
-	if got, want := tuplehash.LeftEncode(18446744073709551615), []byte{8, 255, 255, 255, 255, 255, 255, 255, 255}; !bytes.Equal(got, want) {
-		t.Errorf("tuplehash.LeftEncode(18446744073709551615) = %v, want = %v", got, want)
-	}
-
-	if got, want := tuplehash.LeftEncode(12345), []byte{2, 48, 57}; !bytes.Equal(got, want) {
-		t.Errorf("tuplehash.LeftEncode(12345) = %v, want = %v", got, want)
+	for _, test := range []struct {
+		value uint64
+		want  []byte
+	}{
+		{value: 0, want: []byte{1, 0}},
+		{value: 128, want: []byte{1, 128}},
+		{value: 65536, want: []byte{3, 1, 0, 0}},
+		{value: 4096, want: []byte{2, 16, 0}},
+		{value: 18446744073709551615, want: []byte{8, 255, 255, 255, 255, 255, 255, 255, 255}},
+		{value: 12345, want: []byte{2, 48, 57}},
+	} {
+		if got, want := tuplehash.LeftEncode(test.value), test.want; !bytes.Equal(got, want) {
+			t.Errorf("LeftEncode(%d) = %v, want = %v", test.value, got, want)
+		}
 	}
 }
 
 func TestRightEncode(t *testing.T) {
 	t.Parallel()
 
-	if got, want := tuplehash.RightEncode(0), []byte{0, 1}; !bytes.Equal(got, want) {
-		t.Errorf("tuplehash.RightEncode(0) = %v, want = %v", got, want)
-	}
-
-	if got, want := tuplehash.RightEncode(128), []byte{128, 1}; !bytes.Equal(got, want) {
-		t.Errorf("tuplehash.RightEncode(128) = %v, want = %v", got, want)
-	}
-
-	if got, want := tuplehash.RightEncode(65536), []byte{1, 0, 0, 3}; !bytes.Equal(got, want) {
-		t.Errorf("tuplehash.RightEncode(65536) = %v, want = %v", got, want)
-	}
-
-	if got, want := tuplehash.RightEncode(4096), []byte{16, 0, 2}; !bytes.Equal(got, want) {
-		t.Errorf("tuplehash.RightEncode(4096) = %v, want = %v", got, want)
-	}
-
-	if got, want := tuplehash.RightEncode(18446744073709551615), []byte{255, 255, 255, 255, 255, 255, 255, 255, 8}; !bytes.Equal(got, want) {
-		t.Errorf("tuplehash.RightEncode(18446744073709551615) = %v, want = %v", got, want)
-	}
-
-	if got, want := tuplehash.RightEncode(12345), []byte{48, 57, 2}; !bytes.Equal(got, want) {
-		t.Errorf("tuplehash.RightEncode(12345) = %v, want = %v", got, want)
+	for _, test := range []struct {
+		value uint64
+		want  []byte
+	}{
+		{value: 0, want: []byte{0, 1}},
+		{value: 128, want: []byte{128, 1}},
+		{value: 65536, want: []byte{1, 0, 0, 3}},
+		{value: 4096, want: []byte{16, 0, 2}},
+		{value: 18446744073709551615, want: []byte{255, 255, 255, 255, 255, 255, 255, 255, 8}},
+		{value: 12345, want: []byte{48, 57, 2}},
+	} {
+		if got, want := tuplehash.RightEncode(test.value), test.want; !bytes.Equal(got, want) {
+			t.Errorf("RightEncode(%d) = %v, want = %v", test.value, got, want)
+		}
 	}
 }
 
@@ -89,4 +73,16 @@ func FuzzRightEncode(f *testing.F) {
 			t.Errorf("tuplehash.RightEncode(%v) = tuplehash.RightEncode(%v) = %v", a, b, ab)
 		}
 	})
+}
+
+func BenchmarkLeftEncode(b *testing.B) {
+	for b.Loop() {
+		tuplehash.LeftEncode(2408234)
+	}
+}
+
+func BenchmarkRightEncode(b *testing.B) {
+	for b.Loop() {
+		tuplehash.RightEncode(2408234)
+	}
 }
