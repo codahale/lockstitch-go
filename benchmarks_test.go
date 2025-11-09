@@ -165,7 +165,7 @@ func BenchmarkAEAD(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(len(output)))
 			for b.Loop() {
-				aead(output)
+				aead(output[:length.n])
 			}
 		})
 	}
