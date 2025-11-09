@@ -3,12 +3,12 @@
 Lockstitch is an incremental, stateful cryptographic primitive for symmetric-key cryptographic operations (e.g.,
 hashing, encryption, message authentication codes, and authenticated encryption) in complex protocols. Inspired by
 TupleHash, STROBE, Noise Protocol's stateful objects, Merlin transcripts, and Xoodyak's Cyclist mode, Lockstitch
-uses [cSHAKE128][], [POLYVAL][] and [AES-128][] to provide 10+ Gb/sec performance on modern processors at a 128-bit
+uses [cSHAKE128][], [GMAC][] and [AES-128][] to provide 10+ Gb/sec performance on modern processors at a 128-bit
 security level.
 
 [cSHAKE128]: https://csrc.nist.gov/pubs/sp/800/185/final
 
-[POLYVAL]: https://datatracker.ietf.org/doc/html/rfc8452
+[GMAC]: https://csrc.nist.gov/pubs/sp/800/38/d/final
 
 [AES-128]: https://doi.org/10.6028/NIST.FIPS.197-upd1
 
@@ -146,20 +146,18 @@ extracted from the protocol's transcript, the label, and the output length.
 ```text
 function Encrypt((transcript, S), label, plaintext):
   transcript = transcript || 0x03 || left_encode(|label|) || label || left_encode(|left_encode(|plaintext|)|) || left_encode(|plaintext|)
-  dek = expand((transcript, S), "data encryption key", 128)
-  dak = expand((transcript, S), "data authentication key", 128)
-  auth = POLYVAL(dak, plaintext)
+  dk = expand((transcript, S), "data key", 128)
+  auth = GMAC(dk, plaintext)
   transcript = transcript || left_encode(|auth|) || auth
-  ciphertext = AES128CTR(dek, [0x00; 16], plaintext)
+  ciphertext = AES128CTR(dk, [0x00; 16], plaintext)
   transcript = ratchet((transcript, S))
   return ((transcript, S), ciphertext)
   
 function Decrypt((transcript, S), label, ciphertext):
   transcript = transcript || 0x03 || left_encode(|label|) || label || left_encode(|left_encode(|ciphertext|)|) || left_encode(|ciphertext|)
-  dek = expand((transcript, S), "data encryption key", 128)
-  dak = expand((transcript, S), "data authentication key", 128)
-  plaintext = AES128CTR(dek, [0x00; 16], ciphertext)
-  auth = POLYVAL(dak, plaintext)
+  dk = expand((transcript, S), "data key", 128)
+  plaintext = AES128CTR(dk, [0x00; 16], ciphertext)
+  auth = GMAC(dk, plaintext)
   transcript = transcript || left_encode(|auth|) || auth
   transcript = ratchet((transcript, S))
   return ((transcript, S), plaintext)
@@ -167,11 +165,13 @@ function Decrypt((transcript, S), label, ciphertext):
 
 `Encrypt` appends an operation code, the label length in bits, the label, and the plaintext length in bits to the
 transcript. It then hashes the transcript with cSHAKE128 (using the customization string established in the `Init`
-operation) and derives two values: `dek`, a 128-bit data encryption key; and `dak`, a 128-bit data authentication key.
-The data authentication key is used to calculate a POLYVAL authenticator of the plaintext, using the same padding scheme
-as AES-GCM-SIV (with a hard-coded length of zero bits of authenticated data). The authenticator length and the
-authenticator are appended to the transcript, and the transcript is ratcheted. Finally, the plaintext is encrypted with
-AES-128-CTR using a zero IV, and the new transcript and ciphertext are returned.
+operation) and derives a 128-bit data key. The data key is first used to calculate a GMAC authenticator of the
+plaintext. The authenticator length and the authenticator are appended to the transcript, and the transcript is
+ratcheted. Finally, the plaintext is encrypted with AES-128-CTR using a zero IV, and the new transcript and ciphertext
+are returned.
+
+As GMAC, being a usage of GCM mode, has its own subkey derivation routine, the same derived key is used for both
+AES-128-GMAC and AES-128-CTR.
 
 Two points bear mentioning about `Encrypt` and `Decrypt`:
 
@@ -183,8 +183,8 @@ Two points bear mentioning about `Encrypt` and `Decrypt`:
    will be able to detect duplicate plaintexts (i.e., not IND-CPA secure) and produce modified ciphertexts which
    successfully decrypt (i.e., not IND-CCA secure).
 
-   That said, the divergent ciphertext input will result in divergent protocol transcripts, as the POLYVAL authenticator
-   is eUF-CMA unforgeable.
+   That said, the divergent ciphertext input will result in divergent protocol transcripts, as the GMAC authenticator is
+   eUF-CMA unforgeable.
 
    For IND-CPA security, the protocol's state must include a probabilistic value (like a nonce) and for IND-CCA
    security, use [`Seal`/`Open`](#sealopen).
@@ -197,21 +197,19 @@ authentication tag. The `Seal` operation verifies the tag, returning an error if
 ```text
 function Seal((transcript, S), label, plaintext):
   transcript = transcript || 0x04 || left_encode(|label|) || label || left_encode(|left_encode(|plaintext|)|) || left_encode(|plaintext|)
-  dek = expand((transcript, S), "data encryption key", 128)
-  dak = expand((transcript, S), "data authentication key", 256)
-  auth = POLYVAL(dak, plaintext)
+  dk = expand((transcript, S), "data key", 128)
+  auth = GMAC(dk, plaintext)
   transcript = transcript || left_encode(|auth|) || auth
   tag = expand((transcript, S), "authentication tag", 128)
   transcript = ratchet((transcript, S))
-  ciphertext = AES128CTR(dek, tag, plaintext)
+  ciphertext = AES128CTR(dk, tag, plaintext)
   return ((transcript, S), ciphertext || tag)
  
 function Open((transcript, S), label, ciphertext || tag):
   transcript = transcript || 0x04 || left_encode(|label|) || label || left_encode(|left_encode(|ciphertext|)|) || left_encode(|ciphertext|)
-  dek = expand((transcript, S), "data encryption key", 128)
-  dak = expand((transcript, S), "data authentication key", 256)
-  plaintext = AES128CTR(dek, tag, ciphertext)
-  auth = POLYVAL(dak, plaintext)
+  dk = expand((transcript, S), "data key", 128)
+  plaintext = AES128CTR(dk, tag, ciphertext)
+  auth = GMAC(dk, plaintext)
   transcript = transcript || left_encode(|auth|) || auth
   tag' = expand((transcript, S), "authentication tag", 128)
   transcript = ratchet((transcript, S))

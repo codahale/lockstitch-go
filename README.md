@@ -3,12 +3,12 @@
 Lockstitch is an incremental, stateful cryptographic primitive for symmetric-key cryptographic operations (e.g.,
 hashing, encryption, message authentication codes, and authenticated encryption) in complex protocols. Inspired by
 TupleHash, STROBE, Noise Protocol's stateful objects, Merlin transcripts, and Xoodyak's Cyclist mode, Lockstitch
-uses [cSHAKE128][], [POLYVAL][] and [AES-128][] to provide 10+ Gb/sec performance on modern processors at a 128-bit
+uses [cSHAKE128][], [GMAC][] and [AES-128][] to provide 10+ Gb/sec performance on modern processors at a 128-bit
 security level.
 
 [cSHAKE128]: https://csrc.nist.gov/pubs/sp/800/185/final
 
-[POLYVAL]: https://datatracker.ietf.org/doc/html/rfc8452
+[GMAC]: https://csrc.nist.gov/pubs/sp/800/38/d/final
 
 [AES-128]: https://doi.org/10.6028/NIST.FIPS.197-upd1
 

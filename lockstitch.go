@@ -1,11 +1,11 @@
 // Package lockstitch provides an incremental, stateful cryptographic primitive for symmetric-key cryptographic
 // operations (e.g., hashing, encryption, message authentication codes, and authenticated encryption) in complex
 // protocols. Inspired by TupleHash, STROBE, Noise Protocol's stateful objects, Merlin transcripts, and Xoodyak's
-// Cyclist mode, Lockstitch uses [cSHAKE128], [POLYVAL], and [AES-128] to provide 10+ Gb/sec performance on modern
+// Cyclist mode, Lockstitch uses [cSHAKE128], [GMAC], and [AES-128] to provide 10+ Gb/sec performance on modern
 // processors at a 128-bit security level.
 //
 // [cSHAKE128]: https://csrc.nist.gov/pubs/sp/800/185/final
-// [POLYVAL]: https://tools.ietf.org/html/rfc8452
+// [GMAC]: https://csrc.nist.gov/pubs/sp/800/38/d/final
 // [AES-128]: https://doi.org/10.6028/NIST.FIPS.197-upd1
 package lockstitch
 
@@ -16,9 +16,8 @@ import (
 	"crypto/subtle"
 	"errors"
 
-	"github.com/codahale/lockstitch-go/internal/polyval"
+	"github.com/codahale/lockstitch-go/internal/mem"
 	"github.com/codahale/lockstitch-go/internal/tuplehash"
-	mem "github.com/ericlagergren/subtle"
 )
 
 // TagLen is the number of bytes added to the plaintext by the Seal operation.
@@ -29,8 +28,8 @@ var (
 	// wrong key.
 	ErrInvalidCiphertext = errors.New("lockstitch: invalid ciphertext")
 
-	// ErrInvalidState is returned when a protocol's state cannot be unmarshalled, either due to malformed
-	// data or an incorrect protocol domain.
+	// ErrInvalidState is returned when BinaryUnmarshal fails, either due to malformed data or an incorrect protocol
+	// domain.
 	ErrInvalidState = errors.New("lockstitch: invalid protocol state")
 )
 
@@ -90,20 +89,20 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	// Append the operation metadata to the transcript.
 	p.combine(buf[:0], opCrypt, []byte(label), tuplehash.LeftEncode(buf[9:9], uint64(len(plaintext))*8))
 
-	// Expand a data encryption key and a data authentication key from the transcript.
-	dek := p.expand(buf[9:9], buf[:0], "data encryption key", 16)
-	dak := p.expand(buf[9+16:9+16], buf[:0], "data authentication key", 16)
+	// Expand a data key from the transcript.
+	dk := p.expand(buf[9:9], buf[:0], "data key", 16)
 
-	// Calculate a POLYVAL authenticator of the plaintext.
-	auth := polyval.Authenticator(dak[:0], dak, plaintext)
+	// Calculate a GMAC of the plaintext.
+	block, _ := aes.NewCipher(dk)
+	gcm, _ := cipher.NewGCM(block)
+	auth := gcm.Seal(dk[:0], zeroBlock[:gcm.NonceSize()], nil, plaintext)
 
-	// Append the operation data (i.e., the POLYVAL authenticator) to the transcript.
+	// Append the operation data (i.e., the GMAC authenticator) to the transcript.
 	_, _ = p.transcript.Write(tuplehash.LeftEncode(buf[:0], uint64(len(auth))*8))
 	_, _ = p.transcript.Write(auth)
 
 	// Encrypt the plaintext using AES-128-CTR with an all-zero IV.
-	block, _ := aes.NewCipher(dek)
-	ctr := cipher.NewCTR(block, make([]byte, aes.BlockSize))
+	ctr := cipher.NewCTR(block, zeroBlock[:])
 	ctr.XORKeyStream(ciphertext, plaintext)
 
 	// Ratchet the transcript.
@@ -124,19 +123,19 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	// Append the operation metadata to the transcript.
 	p.combine(buf[:0], opCrypt, []byte(label), tuplehash.LeftEncode(buf[9:9], uint64(len(ciphertext))*8))
 
-	// Expand a data encryption key and a data authentication key from the transcript.
-	dek := p.expand(buf[9:9], buf[:0], "data encryption key", 16)
-	dak := p.expand(buf[9+16:9+16], buf[:0], "data authentication key", 16)
+	// Expand a data key from the transcript.
+	dk := p.expand(buf[9:9], buf[:0], "data key", 16)
 
 	// Decrypt the ciphertext using AES-128-CTR with an all-zero IV.
-	block, _ := aes.NewCipher(dek)
-	ctr := cipher.NewCTR(block, make([]byte, aes.BlockSize))
+	block, _ := aes.NewCipher(dk)
+	ctr := cipher.NewCTR(block, zeroBlock[:])
 	ctr.XORKeyStream(plaintext, ciphertext)
 
-	// Calculate a POLYVAL authenticator of the plaintext.
-	auth := polyval.Authenticator(dak[:0], dak, plaintext)
+	// Calculate a GMAC authenticator of the plaintext.
+	gcm, _ := cipher.NewGCM(block)
+	auth := gcm.Seal(dk[:0], zeroBlock[:gcm.NonceSize()], nil, plaintext)
 
-	// Append the operation data (i.e., the POLYVAL authenticator) to the transcript.
+	// Append the operation data (i.e., the GMAC authenticator) to the transcript.
 	_, _ = p.transcript.Write(tuplehash.LeftEncode(buf[:0], uint64(len(auth))*8))
 	_, _ = p.transcript.Write(auth)
 
@@ -162,14 +161,15 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	// Append the operation metadata to the transcript.
 	p.combine(buf[:0], opAuthCrypt, []byte(label), tuplehash.LeftEncode(buf[9:9], uint64(len(plaintext))*8))
 
-	// Expand a data encryption key and a data authentication key from the transcript.
-	dek := p.expand(buf[9:9], buf[:0], "data encryption key", 16)
-	dak := p.expand(buf[9+16:9+16], buf[:0], "data authentication key", 16)
+	// Expand a data key from the transcript.
+	dk := p.expand(buf[9:9], buf[:0], "data key", 16)
 
-	// Calculate a POLYVAL authenticator of the plaintext.
-	auth := polyval.Authenticator(dak[:0], dak, plaintext)
+	// Calculate a GMAC authenticator of the plaintext.
+	block, _ := aes.NewCipher(dk)
+	gcm, _ := cipher.NewGCM(block)
+	auth := gcm.Seal(dk[:0], zeroBlock[:gcm.NonceSize()], nil, plaintext)
 
-	// Append the operation data (i.e., the POLYVAL authenticator) to the transcript.
+	// Append the operation data (i.e., the GMAC authenticator) to the transcript.
 	_, _ = p.transcript.Write(tuplehash.LeftEncode(buf[:0], uint64(len(auth))*8))
 	_, _ = p.transcript.Write(auth)
 
@@ -177,7 +177,6 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	tag = p.expand(tag[:0], buf[:0], "authentication tag", TagLen)
 
 	// Encrypt the plaintext using AES-128-CTR with the tag as the IV.
-	block, _ := aes.NewCipher(dek)
 	ctr := cipher.NewCTR(block, tag)
 	ctr.XORKeyStream(ciphertext, plaintext)
 
@@ -203,24 +202,24 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	// Append the operation metadata to the transcript.
 	p.combine(buf[:0], opAuthCrypt, []byte(label), tuplehash.LeftEncode(buf[9:9], uint64(len(ciphertext))*8))
 
-	// Expand a data encryption key and a data authentication key from the transcript.
-	dek := p.expand(buf[9:9], buf[:0], "data encryption key", 16)
-	dak := p.expand(buf[9+16:9+16], buf[:0], "data authentication key", 16)
+	// Expand a data key from the transcript.
+	dk := p.expand(buf[9:9], buf[:0], "data key", 16)
 
 	// Decrypt the plaintext using AES-128-CTR with the tag as the IV.
-	block, _ := aes.NewCipher(dek)
+	block, _ := aes.NewCipher(dk)
 	ctr := cipher.NewCTR(block, tag)
 	ctr.XORKeyStream(plaintext, ciphertext)
 
-	// Calculate a POLYVAL authenticator of the unauthenticated plaintext.
-	auth := polyval.Authenticator(dak[:0], dak, plaintext)
+	// Calculate a GMAC authenticator of the plaintext.
+	gcm, _ := cipher.NewGCM(block)
+	auth := gcm.Seal(dk[:0], zeroBlock[:gcm.NonceSize()], nil, plaintext)
 
-	// Append the operation data (i.e., the POLYVAL authenticator) to the transcript.
+	// Append the operation data (i.e., the GMAC authenticator) to the transcript.
 	_, _ = p.transcript.Write(tuplehash.LeftEncode(buf[:0], uint64(len(auth))*8))
 	_, _ = p.transcript.Write(auth)
 
 	// Expand a counterfactual authentication tag.
-	tagP := p.expand(dak[:0], buf[:0], "authentication tag", TagLen)
+	tagP := p.expand(dk[:0], buf[:0], "authentication tag", TagLen)
 	valid := subtle.ConstantTimeCompare(tag, tagP) == 0
 
 	// Ratchet the transcript.
@@ -292,3 +291,6 @@ const (
 	opExpand    = 0x05
 	opRatchet   = 0x06
 )
+
+//nolint:gochecknoglobals // this is fine
+var zeroBlock = [aes.BlockSize]byte{}
