@@ -1,3 +1,10 @@
+// Package polyval implements the [POLYVAL] MAC algorithm using the AES-GCM-SIV padding scheme: pad the final message
+// block with zeros, then hash a final block composed of a 64-bit little endian counter of authenticated data bits (in
+// this context, hard-coded to zero) and a 64-bit little endian counter of message bits.
+//
+// N.B.: Keys cannot be used for multiple messages without invalidating all security claims.
+//
+// [POLYVAL]: https://tools.ietf.org/html/rfc8452
 package polyval
 
 import (
@@ -6,8 +13,8 @@ import (
 	"github.com/ericlagergren/polyval"
 )
 
-// Authenticator calculates a POLYVAL authenticator of the given message with the given key, using the AES-GCM-SIV
-// padding scheme. The 16-byte authenticator is appended to dst.
+// Authenticator calculates a POLYVAL authenticator of the given message with the given key. The 16-byte authenticator
+// is appended to dst.
 func Authenticator(dst, key, message []byte) []byte {
 	p, err := polyval.New(key)
 	if err != nil {
