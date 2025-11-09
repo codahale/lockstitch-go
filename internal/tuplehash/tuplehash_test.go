@@ -21,7 +21,7 @@ func TestLeftEncode(t *testing.T) {
 		{value: 18446744073709551615, want: []byte{8, 255, 255, 255, 255, 255, 255, 255, 255}},
 		{value: 12345, want: []byte{2, 48, 57}},
 	} {
-		if got, want := tuplehash.LeftEncode(test.value), test.want; !bytes.Equal(got, want) {
+		if got, want := tuplehash.LeftEncode(nil, test.value), test.want; !bytes.Equal(got, want) {
 			t.Errorf("LeftEncode(%d) = %v, want = %v", test.value, got, want)
 		}
 	}
@@ -41,17 +41,19 @@ func TestRightEncode(t *testing.T) {
 		{value: 18446744073709551615, want: []byte{255, 255, 255, 255, 255, 255, 255, 255, 8}},
 		{value: 12345, want: []byte{48, 57, 2}},
 	} {
-		if got, want := tuplehash.RightEncode(test.value), test.want; !bytes.Equal(got, want) {
+		if got, want := tuplehash.RightEncode(nil, test.value), test.want; !bytes.Equal(got, want) {
 			t.Errorf("RightEncode(%d) = %v, want = %v", test.value, got, want)
 		}
 	}
 }
 
 func FuzzLeftEncode(f *testing.F) {
+	outA := make([]byte, 9)
+	outB := make([]byte, 9)
 	f.Add(uint64(2), uint64(3))
 	f.Fuzz(func(t *testing.T, a uint64, b uint64) {
-		ab := tuplehash.LeftEncode(a)
-		bb := tuplehash.LeftEncode(b)
+		ab := tuplehash.LeftEncode(outA[:0], a)
+		bb := tuplehash.LeftEncode(outB[:0], b)
 
 		if a == b && !bytes.Equal(ab, bb) {
 			t.Errorf("tuplehash.LeftEncode(%v) = %v, tuplehash.LeftEncode(%v) = %v", a, ab, b, bb)
@@ -62,10 +64,12 @@ func FuzzLeftEncode(f *testing.F) {
 }
 
 func FuzzRightEncode(f *testing.F) {
+	outA := make([]byte, 9)
+	outB := make([]byte, 9)
 	f.Add(uint64(2), uint64(3))
 	f.Fuzz(func(t *testing.T, a uint64, b uint64) {
-		ab := tuplehash.RightEncode(a)
-		bb := tuplehash.RightEncode(b)
+		ab := tuplehash.RightEncode(outA[:0], a)
+		bb := tuplehash.RightEncode(outB[:0], b)
 
 		if a == b && !bytes.Equal(ab, bb) {
 			t.Errorf("tuplehash.RightEncode(%v) = %v, tuplehash.RightEncode(%v) = %v", a, ab, b, bb)
@@ -76,13 +80,19 @@ func FuzzRightEncode(f *testing.F) {
 }
 
 func BenchmarkLeftEncode(b *testing.B) {
+	b.ReportAllocs()
+
+	out := make([]byte, 9)
 	for b.Loop() {
-		tuplehash.LeftEncode(2408234)
+		tuplehash.LeftEncode(out[:0], 2408234)
 	}
 }
 
 func BenchmarkRightEncode(b *testing.B) {
+	b.ReportAllocs()
+
+	out := make([]byte, 9)
 	for b.Loop() {
-		tuplehash.RightEncode(2408234)
+		tuplehash.RightEncode(out[:0], 2408234)
 	}
 }

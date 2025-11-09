@@ -6,22 +6,24 @@ package tuplehash
 import (
 	"encoding/binary"
 	"math/bits"
+
+	"github.com/ericlagergren/subtle"
 )
 
 // LeftEncode encodes an integer value using NIST SP 800-185's left_encode.
-func LeftEncode(value uint64) []byte {
-	buf := make([]byte, 9)
-	n := len(buf) - 1 - (bits.LeadingZeros64(value|1) / 8)
+func LeftEncode(dst []byte, value uint64) []byte {
+	n := 8 - (bits.LeadingZeros64(value|1) / 8)
+	ret, buf := subtle.SliceForAppend(dst, 9)
 	binary.BigEndian.PutUint64(buf[1:], value<<((8-n)*8))
 	buf[0] = byte(n)
-	return buf[:n+1]
+	return ret[:len(ret)-(8-n)]
 }
 
 // RightEncode encodes an integer value using NIST SP 800-185's right_encode.
-func RightEncode(value uint64) []byte {
-	buf := make([]byte, 9)
-	n := len(buf) - 1 - (bits.LeadingZeros64(value|1) / 8)
+func RightEncode(dst []byte, value uint64) []byte {
+	n := 8 - (bits.LeadingZeros64(value|1) / 8)
+	ret, buf := subtle.SliceForAppend(dst, 9)
 	binary.BigEndian.PutUint64(buf, value<<((8-n)*8))
 	buf[n] = byte(n)
-	return buf[:n+1]
+	return ret[:len(ret)-(8-n)]
 }

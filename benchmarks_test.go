@@ -7,12 +7,16 @@ import (
 )
 
 func BenchmarkInit(b *testing.B) {
+	b.ReportAllocs()
+
 	for b.Loop() {
 		lockstitch.NewProtocol("mix")
 	}
 }
 
 func BenchmarkMix(b *testing.B) {
+	b.ReportAllocs()
+
 	p := lockstitch.NewProtocol("mix")
 	label := "label"
 	input := []byte("input")
@@ -22,6 +26,8 @@ func BenchmarkMix(b *testing.B) {
 }
 
 func BenchmarkDerive(b *testing.B) {
+	b.ReportAllocs()
+
 	p := lockstitch.NewProtocol("derive")
 	label := "label"
 	output := make([]byte, 32)
@@ -31,6 +37,8 @@ func BenchmarkDerive(b *testing.B) {
 }
 
 func BenchmarkEncrypt(b *testing.B) {
+	b.ReportAllocs()
+
 	p := lockstitch.NewProtocol("encrypt")
 	label := "label"
 	output := make([]byte, 32)
@@ -40,6 +48,8 @@ func BenchmarkEncrypt(b *testing.B) {
 }
 
 func BenchmarkDecrypt(b *testing.B) {
+	b.ReportAllocs()
+
 	p := lockstitch.NewProtocol("decrypt")
 	label := "label"
 	output := make([]byte, 32)
@@ -49,6 +59,8 @@ func BenchmarkDecrypt(b *testing.B) {
 }
 
 func BenchmarkSeal(b *testing.B) {
+	b.ReportAllocs()
+
 	p := lockstitch.NewProtocol("seal")
 	label := "label"
 	output := make([]byte, 32+lockstitch.TagLen)
@@ -58,6 +70,8 @@ func BenchmarkSeal(b *testing.B) {
 }
 
 func BenchmarkOpen(b *testing.B) {
+	b.ReportAllocs()
+
 	label := "label"
 
 	output := make([]byte, 32)
@@ -73,6 +87,8 @@ func BenchmarkOpen(b *testing.B) {
 }
 
 func BenchmarkHash(b *testing.B) {
+	b.ReportAllocs()
+
 	hash := func(message []byte) []byte {
 		protocol := lockstitch.NewProtocol("hash")
 		protocol.Mix("message", message)
@@ -91,6 +107,8 @@ func BenchmarkHash(b *testing.B) {
 }
 
 func BenchmarkPRF(b *testing.B) {
+	b.ReportAllocs()
+
 	key := make([]byte, 32)
 	prf := func(output []byte) []byte {
 		protocol := lockstitch.NewProtocol("prf")
@@ -110,6 +128,8 @@ func BenchmarkPRF(b *testing.B) {
 }
 
 func BenchmarkStream(b *testing.B) {
+	b.ReportAllocs()
+
 	key := make([]byte, 32)
 	nonce := make([]byte, 16)
 	stream := func(message []byte) []byte {
@@ -131,6 +151,8 @@ func BenchmarkStream(b *testing.B) {
 }
 
 func BenchmarkAEAD(b *testing.B) {
+	b.ReportAllocs()
+
 	key := make([]byte, 32)
 	nonce := make([]byte, 16)
 	ad := make([]byte, 32)

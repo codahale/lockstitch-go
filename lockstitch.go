@@ -51,7 +51,7 @@ func NewProtocol(domain string) Protocol {
 // Mix ratchets the protocol's state using the given label and input.
 func (p *Protocol) Mix(label string, input []byte) {
 	// Append the operation metadata and input to the transcript in a recoverable encoding.
-	p.combine(opMix, []byte(label), input)
+	p.combine(make([]byte, 0, 9), opMix, []byte(label), input)
 }
 
 // Derive generates pseudorandom output from the Protocol's current state, the label, and the output length, then
@@ -62,14 +62,17 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 		panic("invalid argument to Derive: n cannot be negative")
 	}
 
+	// Allocate a slice for keys and encoded lengths.
+	buf := make([]byte, 9+32)
+
 	// Append the operation metadata to the transcript in a recoverable encoding.
-	p.combine(opDerive, []byte(label), tuplehash.LeftEncode(uint64(n)*8))
+	p.combine(buf[:0], opDerive, []byte(label), tuplehash.LeftEncode(buf[9:9], uint64(n)*8))
 
 	// Expand n bytes of PRF output from the transcript.
-	prf := p.expand(dst, "prf output", n)
+	prf := p.expand(dst, buf[:0], "prf output", n)
 
 	// Ratchet the transcript.
-	p.ratchet()
+	p.ratchet(buf[9:9], buf[:0])
 
 	return prf
 }
@@ -80,30 +83,31 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 // To reuse plaintext's storage for the encrypted output, use plaintext[:0] as dst. Otherwise, the remaining capacity of
 // dst must not overlap plaintext.
 func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
-	// Allocate a slice for the plaintext.
+	// Allocate a slice for the ciphertext and one for keys and encoded lengths.
 	ret, ciphertext := mem.SliceForAppend(dst, len(plaintext))
+	buf := make([]byte, 9+16+16)
 
 	// Append the operation metadata to the transcript.
-	p.combine(opCrypt, []byte(label), tuplehash.LeftEncode(uint64(len(plaintext))*8))
+	p.combine(buf[:0], opCrypt, []byte(label), tuplehash.LeftEncode(buf[9:9], uint64(len(plaintext))*8))
 
 	// Expand a data encryption key and a data authentication key from the transcript.
-	dek := p.expand(nil, "data encryption key", 16)
-	dak := p.expand(nil, "data authentication key", 16)
+	dek := p.expand(buf[9:9], buf[:0], "data encryption key", 16)
+	dak := p.expand(buf[9+16:9+16], buf[:0], "data authentication key", 16)
 
 	// Calculate a POLYVAL authenticator of the plaintext.
 	auth := polyval.Authenticator(dak[:0], dak, plaintext)
 
 	// Append the operation data (i.e., the POLYVAL authenticator) to the transcript.
-	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(auth)) * 8))
+	_, _ = p.transcript.Write(tuplehash.LeftEncode(buf[:0], uint64(len(auth))*8))
 	_, _ = p.transcript.Write(auth)
-
-	// Ratchet the transcript.
-	p.ratchet()
 
 	// Encrypt the plaintext using AES-128-CTR with an all-zero IV.
 	block, _ := aes.NewCipher(dek)
 	ctr := cipher.NewCTR(block, make([]byte, aes.BlockSize))
 	ctr.XORKeyStream(ciphertext, plaintext)
+
+	// Ratchet the transcript.
+	p.ratchet(buf[9:9], buf[:0])
 
 	return ret
 }
@@ -113,15 +117,16 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 // ciphertext's storage for the decrypted output, use ciphertext[:0] as dst. Otherwise, the remaining capacity of dst
 // must not overlap ciphertext.
 func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
-	// Allocate a slice for the plaintext.
+	// Allocate a slice for the plaintext and one for keys and encoded lengths.
 	ret, plaintext := mem.SliceForAppend(dst, len(ciphertext))
+	buf := make([]byte, 9+16+16)
 
 	// Append the operation metadata to the transcript.
-	p.combine(opCrypt, []byte(label), tuplehash.LeftEncode(uint64(len(ciphertext))*8))
+	p.combine(buf[:0], opCrypt, []byte(label), tuplehash.LeftEncode(buf[9:9], uint64(len(ciphertext))*8))
 
 	// Expand a data encryption key and a data authentication key from the transcript.
-	dek := p.expand(nil, "data encryption key", 16)
-	dak := p.expand(nil, "data authentication key", 16)
+	dek := p.expand(buf[9:9], buf[:0], "data encryption key", 16)
+	dak := p.expand(buf[9+16:9+16], buf[:0], "data authentication key", 16)
 
 	// Decrypt the ciphertext using AES-128-CTR with an all-zero IV.
 	block, _ := aes.NewCipher(dek)
@@ -132,11 +137,11 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	auth := polyval.Authenticator(dak[:0], dak, plaintext)
 
 	// Append the operation data (i.e., the POLYVAL authenticator) to the transcript.
-	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(auth)) * 8))
+	_, _ = p.transcript.Write(tuplehash.LeftEncode(buf[:0], uint64(len(auth))*8))
 	_, _ = p.transcript.Write(auth)
 
 	// Ratchet the transcript.
-	p.ratchet()
+	p.ratchet(buf[9:9], buf[:0])
 
 	return ret
 }
@@ -148,26 +153,28 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 // To reuse plaintext's storage for the encrypted output, use plaintext[:0] as dst. Otherwise, the remaining capacity of
 // dst must not overlap plaintext.
 func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
-	// Allocate a slice for the ciphertext split it between ciphertext and tag.
+	// Allocate a slice for the ciphertext split it between ciphertext and tag. Also allocate a slice for keys and
+	// encoded lengths.
 	ret, ciphertext := mem.SliceForAppend(dst, len(plaintext)+TagLen)
 	ciphertext, tag := ciphertext[:len(plaintext)], ciphertext[len(plaintext):]
+	buf := make([]byte, 9+16+16)
 
 	// Append the operation metadata to the transcript.
-	p.combine(opAuthCrypt, []byte(label), tuplehash.LeftEncode(uint64(len(plaintext))*8))
+	p.combine(buf[:0], opAuthCrypt, []byte(label), tuplehash.LeftEncode(buf[9:9], uint64(len(plaintext))*8))
 
 	// Expand a data encryption key and a data authentication key from the transcript.
-	dek := p.expand(nil, "data encryption key", 16)
-	dak := p.expand(nil, "data authentication key", 16)
+	dek := p.expand(buf[9:9], buf[:0], "data encryption key", 16)
+	dak := p.expand(buf[9+16:9+16], buf[:0], "data authentication key", 16)
 
 	// Calculate a POLYVAL authenticator of the plaintext.
 	auth := polyval.Authenticator(dak[:0], dak, plaintext)
 
 	// Append the operation data (i.e., the POLYVAL authenticator) to the transcript.
-	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(auth)) * 8))
+	_, _ = p.transcript.Write(tuplehash.LeftEncode(buf[:0], uint64(len(auth))*8))
 	_, _ = p.transcript.Write(auth)
 
 	// Expand an authentication tag.
-	tag = p.expand(tag[:0], "authentication tag", TagLen)
+	tag = p.expand(tag[:0], buf[:0], "authentication tag", TagLen)
 
 	// Encrypt the plaintext using AES-128-CTR with the tag as the IV.
 	block, _ := aes.NewCipher(dek)
@@ -175,7 +182,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	ctr.XORKeyStream(ciphertext, plaintext)
 
 	// Ratchet the transcript.
-	p.ratchet()
+	p.ratchet(buf[9:9], buf[:0])
 
 	return ret
 }
@@ -187,16 +194,18 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 // To reuse ciphertext's storage for the decrypted output, use ciphertext[:0] as dst. Otherwise, the remaining capacity
 // of dst must not overlap ciphertext.
 func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
-	// Allocate a slice for the plaintext split the ciphertext between ciphertext and tag.
+	// Allocate a slice for the plaintext and split the ciphertext between ciphertext and tag. Also allocate a slice for
+	// keys and encoded lengths.
 	ciphertext, tag := ciphertext[:len(ciphertext)-TagLen], ciphertext[len(ciphertext)-TagLen:]
 	ret, plaintext := mem.SliceForAppend(dst, len(ciphertext))
+	buf := make([]byte, 9+16+16)
 
 	// Append the operation metadata to the transcript.
-	p.combine(opAuthCrypt, []byte(label), tuplehash.LeftEncode(uint64(len(ciphertext))*8))
+	p.combine(buf[:0], opAuthCrypt, []byte(label), tuplehash.LeftEncode(buf[9:9], uint64(len(ciphertext))*8))
 
 	// Expand a data encryption key and a data authentication key from the transcript.
-	dek := p.expand(nil, "data encryption key", 16)
-	dak := p.expand(nil, "data authentication key", 16)
+	dek := p.expand(buf[9:9], buf[:0], "data encryption key", 16)
+	dak := p.expand(buf[9+16:9+16], buf[:0], "data authentication key", 16)
 
 	// Decrypt the plaintext using AES-128-CTR with the tag as the IV.
 	block, _ := aes.NewCipher(dek)
@@ -207,17 +216,18 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	auth := polyval.Authenticator(dak[:0], dak, plaintext)
 
 	// Append the operation data (i.e., the POLYVAL authenticator) to the transcript.
-	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(auth)) * 8))
+	_, _ = p.transcript.Write(tuplehash.LeftEncode(buf[:0], uint64(len(auth))*8))
 	_, _ = p.transcript.Write(auth)
 
 	// Expand a counterfactual authentication tag.
-	tagP := p.expand(dak[:0], "authentication tag", TagLen)
+	tagP := p.expand(dak[:0], buf[:0], "authentication tag", TagLen)
+	valid := subtle.ConstantTimeCompare(tag, tagP) == 0
 
 	// Ratchet the transcript.
-	p.ratchet()
+	p.ratchet(buf[9:9], buf[:0])
 
 	// Compare the tag and the counterfactual tag in constant time.
-	if subtle.ConstantTimeCompare(tag, tagP) == 0 {
+	if valid {
 		return nil, ErrInvalidCiphertext
 	}
 	return ret, nil
@@ -245,31 +255,31 @@ func (p *Protocol) Clone() Protocol {
 
 // ratchet replaces the protocol's transcript with a ratchet operation code and a ratchet key derived from the previous
 // protocol transcript.
-func (p *Protocol) ratchet() {
-	rak := p.expand(nil, "ratchet key", 32)
+func (p *Protocol) ratchet(dst, buf []byte) {
+	rak := p.expand(dst, buf, "ratchet key", 32)
 	p.transcript.Reset()
-	p.combine(opRatchet, rak)
+	p.combine(buf, opRatchet, rak)
 }
 
 // combine appends an operation code and a sequence of bit string inputs to the protocol transcript using a recoverable
 // encoding.
-func (p *Protocol) combine(op byte, inputs ...[]byte) {
-	_, _ = p.transcript.Write([]byte{op})
+func (p *Protocol) combine(buf []byte, op byte, inputs ...[]byte) {
+	_, _ = p.transcript.Write(append(buf, op))
 	for _, input := range inputs {
-		_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(input)) * 8))
+		_, _ = p.transcript.Write(tuplehash.LeftEncode(buf, uint64(len(input))*8))
 		_, _ = p.transcript.Write(input)
 	}
 }
 
 // expand clones the protocol's transcript, appends an expand operation code, the label length, the label, and the
 // requested output length, and fills the out slice with derived data.
-func (p *Protocol) expand(dst []byte, label string, n int) []byte {
+func (p *Protocol) expand(dst, buf []byte, label string, n int) []byte {
 	ret, out := mem.SliceForAppend(dst, n)
 	h := p.transcript // make a copy
 	_, _ = h.Write([]byte{opExpand})
-	_, _ = h.Write(tuplehash.LeftEncode(uint64(len(label)) * 8))
+	_, _ = h.Write(tuplehash.LeftEncode(buf, uint64(len(label))*8))
 	_, _ = h.Write([]byte(label))
-	_, _ = h.Write(tuplehash.RightEncode(uint64(len(out)) * 8))
+	_, _ = h.Write(tuplehash.RightEncode(buf, uint64(len(out))*8))
 	_, _ = h.Read(out)
 	return ret
 }
