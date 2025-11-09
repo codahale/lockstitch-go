@@ -8,20 +8,27 @@ import (
 )
 
 func FuzzAuthenticator(f *testing.F) {
-	f.Add([]byte("ayellowsubmarine"), []byte{1, 2, 3}, []byte{1, 2, 4})
-	f.Fuzz(func(t *testing.T, key, msgA, msgB []byte) {
-		if len(key) != 16 {
+	f.Add([]byte("ayellowsubmarine"), []byte("0123456789012345"), []byte{1, 2, 3}, []byte{1, 2, 4})
+	f.Fuzz(func(t *testing.T, keyA, keyB, msgA, msgB []byte) {
+		if len(keyA) != 16 || len(keyB) != 16 ||
+			len(msgA) == 0 || len(msgB) == 0 ||
+			bytes.Equal(keyA, make([]byte, 16)) ||
+			bytes.Equal(keyB, make([]byte, 16)) ||
+			bytes.Equal(keyA, keyB) || bytes.Equal(msgA, msgB) {
 			t.Skip()
 		}
 
-		if bytes.Equal(key, make([]byte, 16)) {
-			t.Skip()
+		authAA := polyval.Authenticator(nil, keyA, msgA)
+		authAB := polyval.Authenticator(nil, keyA, msgB)
+		authBA := polyval.Authenticator(nil, keyB, msgA)
+
+		if bytes.Equal(authAA, authAB) {
+			t.Error("same key, different messages, same authenticator")
 		}
 
-		authA := polyval.Authenticator(nil, key, msgA)
-		authB := polyval.Authenticator(nil, key, msgB)
-		if bytes.Equal(msgA, msgB) != bytes.Equal(authA, authB) {
-			t.Error("message/authenticator equality mismatch")
+		if bytes.Equal(authAA, authBA) {
+			t.Log(keyA, keyB, msgA)
+			t.Error("different keys, same message, same authenticator")
 		}
 	})
 }
