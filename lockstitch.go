@@ -224,14 +224,20 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	return ret, nil
 }
 
+// AppendBinary appends the binary representation of itself to the end of b (allocating a larger slice if necessary) and
+// returns the updated slice.
+//
+// Implementations must not retain b, nor mutate any bytes within b[:len(b)].
 func (p *Protocol) AppendBinary(b []byte) ([]byte, error) {
 	return p.transcript.AppendBinary(b)
 }
 
+// MarshalBinary encodes the receiver into a binary form and returns the result.
 func (p *Protocol) MarshalBinary() (data []byte, err error) {
 	return p.AppendBinary(make([]byte, 0, 256))
 }
 
+// UnmarshalBinary decodes the binary form into the receiver and returns an error, if any.
 func (p *Protocol) UnmarshalBinary(data []byte) error {
 	if err := p.transcript.UnmarshalBinary(data); err != nil {
 		return ErrInvalidState
@@ -275,14 +281,18 @@ func (p *Protocol) expand(dst, buf []byte, label string, n int) []byte {
 	return ret
 }
 
+// gmac calculates a GMAC authenticator using the keyed block cipher for the given message. The authenticator is
+// appended to dst and returned.
 func gmac(block cipher.Block, dst, message []byte) []byte {
 	gcm, _ := cipher.NewGCM(block)
 	return gcm.Seal(dst, zeroBlock[:gcm.NonceSize()], nil, message)
 }
 
-func ctr(block cipher.Block, iv, output, input []byte) {
+// ctr XORs each byte in the given slice with a byte from the cipher's CTR mode key stream. Dst and src must overlap
+// entirely or not at all.
+func ctr(block cipher.Block, iv, dst, src []byte) {
 	stream := cipher.NewCTR(block, iv)
-	stream.XORKeyStream(output, input)
+	stream.XORKeyStream(dst, src)
 }
 
 const (
