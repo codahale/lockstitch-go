@@ -94,16 +94,14 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 
 	// Calculate a GMAC of the plaintext.
 	block, _ := aes.NewCipher(dk)
-	gcm, _ := cipher.NewGCM(block)
-	auth := gcm.Seal(dk[:0], zeroBlock[:gcm.NonceSize()], nil, plaintext)
+	auth := gmac(block, dk[:0], plaintext)
 
 	// Append the operation data (i.e., the GMAC authenticator) to the transcript.
 	_, _ = p.transcript.Write(tuplehash.LeftEncode(buf[:0], uint64(len(auth))*8))
 	_, _ = p.transcript.Write(auth)
 
 	// Encrypt the plaintext using AES-128-CTR with an all-zero IV.
-	ctr := cipher.NewCTR(block, zeroBlock[:])
-	ctr.XORKeyStream(ciphertext, plaintext)
+	ctr(block, zeroBlock[:], ciphertext, plaintext)
 
 	// Ratchet the transcript.
 	p.ratchet(buf[9:9], buf[:0])
@@ -128,12 +126,10 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 
 	// Decrypt the ciphertext using AES-128-CTR with an all-zero IV.
 	block, _ := aes.NewCipher(dk)
-	ctr := cipher.NewCTR(block, zeroBlock[:])
-	ctr.XORKeyStream(plaintext, ciphertext)
+	ctr(block, zeroBlock[:], plaintext, ciphertext)
 
 	// Calculate a GMAC authenticator of the plaintext.
-	gcm, _ := cipher.NewGCM(block)
-	auth := gcm.Seal(dk[:0], zeroBlock[:gcm.NonceSize()], nil, plaintext)
+	auth := gmac(block, dk[:0], plaintext)
 
 	// Append the operation data (i.e., the GMAC authenticator) to the transcript.
 	_, _ = p.transcript.Write(tuplehash.LeftEncode(buf[:0], uint64(len(auth))*8))
@@ -166,8 +162,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 
 	// Calculate a GMAC authenticator of the plaintext.
 	block, _ := aes.NewCipher(dk)
-	gcm, _ := cipher.NewGCM(block)
-	auth := gcm.Seal(dk[:0], zeroBlock[:gcm.NonceSize()], nil, plaintext)
+	auth := gmac(block, dk[:0], plaintext)
 
 	// Append the operation data (i.e., the GMAC authenticator) to the transcript.
 	_, _ = p.transcript.Write(tuplehash.LeftEncode(buf[:0], uint64(len(auth))*8))
@@ -177,8 +172,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	tag = p.expand(tag[:0], buf[:0], "authentication tag", TagLen)
 
 	// Encrypt the plaintext using AES-128-CTR with the tag as the IV.
-	ctr := cipher.NewCTR(block, tag)
-	ctr.XORKeyStream(ciphertext, plaintext)
+	ctr(block, tag, ciphertext, plaintext)
 
 	// Ratchet the transcript.
 	p.ratchet(buf[9:9], buf[:0])
@@ -207,12 +201,10 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 
 	// Decrypt the plaintext using AES-128-CTR with the tag as the IV.
 	block, _ := aes.NewCipher(dk)
-	ctr := cipher.NewCTR(block, tag)
-	ctr.XORKeyStream(plaintext, ciphertext)
+	ctr(block, tag, plaintext, ciphertext)
 
 	// Calculate a GMAC authenticator of the plaintext.
-	gcm, _ := cipher.NewGCM(block)
-	auth := gcm.Seal(dk[:0], zeroBlock[:gcm.NonceSize()], nil, plaintext)
+	auth := gmac(block, dk[:0], plaintext)
 
 	// Append the operation data (i.e., the GMAC authenticator) to the transcript.
 	_, _ = p.transcript.Write(tuplehash.LeftEncode(buf[:0], uint64(len(auth))*8))
@@ -281,6 +273,16 @@ func (p *Protocol) expand(dst, buf []byte, label string, n int) []byte {
 	_, _ = h.Write(tuplehash.RightEncode(buf, uint64(len(out))*8))
 	_, _ = h.Read(out)
 	return ret
+}
+
+func gmac(block cipher.Block, dst, message []byte) []byte {
+	gcm, _ := cipher.NewGCM(block)
+	return gcm.Seal(dst, zeroBlock[:gcm.NonceSize()], nil, message)
+}
+
+func ctr(block cipher.Block, iv, output, input []byte) {
+	stream := cipher.NewCTR(block, iv)
+	stream.XORKeyStream(output, input)
 }
 
 const (
