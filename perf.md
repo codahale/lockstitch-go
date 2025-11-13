@@ -1,73 +1,73 @@
 # Performance
 
-## `amd64` (GCP `c4-highcpu-4`, Intel Emerald Rapids, Debian 12, Go 1.25.4)
+## `amd64` (GCP `c4-standard-4`, Intel Emerald Rapids, Debian 12, Go 1.25.4)
 
 ```text
 goos: linux
 goarch: amd64
 pkg: github.com/codahale/lockstitch-go
 cpu: INTEL(R) XEON(R) PLATINUM 8581C CPU @ 2.30GHz
-BenchmarkInit-4                 16436234             74.18 ns/op                              40 B/op          2 allocs/op
-BenchmarkMix-4                  25772430             48.20 ns/op                               0 B/op          0 allocs/op
-BenchmarkDerive-4                1575103             757.4 ns/op                               0 B/op          0 allocs/op
-BenchmarkEncrypt-4               1000000              1061 ns/op                            1072 B/op          3 allocs/op
-BenchmarkDecrypt-4               1000000              1041 ns/op                            1072 B/op          3 allocs/op
-BenchmarkSeal-4                   905809              1335 ns/op                            1024 B/op          2 allocs/op
-BenchmarkOpen-4                   790770              1508 ns/op                            1064 B/op          4 allocs/op
-BenchmarkHash/16B-4              1281050             940.6 ns/op          17.01 MB/s          56 B/op          2 allocs/op
-BenchmarkHash/256B-4             1000000              1025 ns/op         249.86 MB/s          56 B/op          2 allocs/op
-BenchmarkHash/1KiB-4              605011              1969 ns/op         520.00 MB/s          56 B/op          2 allocs/op
-BenchmarkHash/16KiB-4              32223             37269 ns/op         439.62 MB/s       98360 B/op          5 allocs/op
-BenchmarkHash/1MiB-4                1693            723622 ns/op        1449.07 MB/s       98360 B/op          5 allocs/op
-BenchmarkPRF/16B-4               1377500             871.3 ns/op          18.36 MB/s          24 B/op          1 allocs/op
-BenchmarkPRF/256B-4              1000000              1052 ns/op         243.28 MB/s          24 B/op          1 allocs/op
-BenchmarkPRF/1KiB-4               616177              1882 ns/op         544.21 MB/s          24 B/op          1 allocs/op
-BenchmarkPRF/16KiB-4               70160             17297 ns/op         947.23 MB/s          24 B/op          1 allocs/op
-BenchmarkPRF/1MiB-4                 1118           1067252 ns/op         982.50 MB/s          24 B/op          1 allocs/op
-BenchmarkStream/16B-4             900343              1163 ns/op          13.76 MB/s        1096 B/op          4 allocs/op
-BenchmarkStream/256B-4            705640              1591 ns/op         160.95 MB/s        1096 B/op          4 allocs/op
-BenchmarkStream/1KiB-4            485647              2373 ns/op         431.47 MB/s        1096 B/op          4 allocs/op
-BenchmarkStream/16KiB-4            44528             26644 ns/op         614.93 MB/s       66632 B/op          6 allocs/op
-BenchmarkStream/1MiB-4              1527            802240 ns/op        1307.06 MB/s       66632 B/op          6 allocs/op
-BenchmarkAEAD/16B-4               571228              2040 ns/op          15.69 MB/s        1048 B/op          3 allocs/op
-BenchmarkAEAD/256B-4              625093              1972 ns/op         137.93 MB/s        1048 B/op          3 allocs/op
-BenchmarkAEAD/1KiB-4              349651              3206 ns/op         324.44 MB/s        1048 B/op          3 allocs/op
-BenchmarkAEAD/16KiB-4              30080             39667 ns/op         413.44 MB/s       99352 B/op          6 allocs/op
-BenchmarkAEAD/1MiB-4                1452            865504 ns/op        1211.54 MB/s       99352 B/op          6 allocs/op
+BenchmarkInit-4                 18236896             67.42 ns/op                              40 B/op          2 allocs/op
+kBenchmarkMix-4                 28211306             42.65 ns/op                               0 B/op          0 allocs/op
+BenchmarkDerive-4                1671836             712.9 ns/op                               0 B/op          0 allocs/op
+BenchmarkEncrypt-4                796130              1411 ns/op                            1088 B/op          3 allocs/op
+BenchmarkDecrypt-4                857202              1430 ns/op                            1088 B/op          3 allocs/op
+BenchmarkSeal-4                   731986              1740 ns/op                            1024 B/op          2 allocs/op
+BenchmarkOpen-4                   553444              1909 ns/op                            1064 B/op          4 allocs/op
+BenchmarkHash/16B-4              1363550             868.9 ns/op          18.41 MB/s          56 B/op          2 allocs/op
+BenchmarkHash/256B-4             1284543             932.5 ns/op         274.52 MB/s          56 B/op          2 allocs/op
+BenchmarkHash/1KiB-4              653845              1810 ns/op         565.77 MB/s          56 B/op          2 allocs/op
+BenchmarkHash/16KiB-4              35170             34554 ns/op         474.15 MB/s       98360 B/op          5 allocs/op
+BenchmarkHash/1MiB-4                1880            665625 ns/op        1575.32 MB/s       98360 B/op          5 allocs/op
+BenchmarkPRF/16B-4               1407378             846.0 ns/op          18.91 MB/s          24 B/op          1 allocs/op
+BenchmarkPRF/256B-4              1000000              1049 ns/op         244.02 MB/s          24 B/op          1 allocs/op
+BenchmarkPRF/1KiB-4               601023              1843 ns/op         555.66 MB/s          24 B/op          1 allocs/op
+BenchmarkPRF/16KiB-4               74456             16239 ns/op        1008.95 MB/s          24 B/op          1 allocs/op
+BenchmarkPRF/1MiB-4                 1196           1010565 ns/op        1037.61 MB/s          24 B/op          1 allocs/op
+BenchmarkStream/16B-4             718314              1487 ns/op          10.76 MB/s        1112 B/op          4 allocs/op
+BenchmarkStream/256B-4            785841              1541 ns/op         166.16 MB/s        1112 B/op          4 allocs/op
+BenchmarkStream/1KiB-4            752530              1703 ns/op         601.23 MB/s        1112 B/op          4 allocs/op
+BenchmarkStream/16KiB-4           279750              4359 ns/op        3758.40 MB/s        1112 B/op          4 allocs/op
+BenchmarkStream/1MiB-4              6708            185449 ns/op        5654.26 MB/s        1112 B/op          4 allocs/op
+BenchmarkAEAD/16B-4               472008              2327 ns/op          13.75 MB/s        1048 B/op          3 allocs/op
+BenchmarkAEAD/256B-4              514924              2290 ns/op         118.76 MB/s        1048 B/op          3 allocs/op
+BenchmarkAEAD/1KiB-4              495906              2445 ns/op         425.37 MB/s        1048 B/op          3 allocs/op
+BenchmarkAEAD/16KiB-4             222387              5104 ns/op        3212.94 MB/s        1048 B/op          3 allocs/op
+BenchmarkAEAD/1MiB-4                5898            183736 ns/op        5707.06 MB/s        1048 B/op          3 allocs/op
 ```
 
 ## `arm64` (Apple MacBook Pro `Mac16,7` M4 Pro, macOS 26.1, Go 1.25,4)
 
 ```text
-goos: darwin                                                                                                                                                                                                                                         
-goarch: arm64                                                                                                                                                                                                                                        
-pkg: github.com/codahale/lockstitch-go                                                                                                                                                                                                               
-cpu: Apple M4 Pro                                                                                                                                                                                                                                    
-BenchmarkInit-14                        21789001             54.49 ns/op                              40 B/op          2 allocs/op                                                                                                                                                   
-BenchmarkMix-14                         46149186             24.91 ns/op                               0 B/op          0 allocs/op                                                                                                                                                   
-BenchmarkDerive-14                       2605101             461.4 ns/op                               0 B/op          0 allocs/op                                                                                                                                                   
-BenchmarkEncrypt-14                      1951214             612.5 ns/op                            1072 B/op          3 allocs/op                                                                                                                                                   
-BenchmarkDecrypt-14                      1968522             610.6 ns/op                            1072 B/op          3 allocs/op                                                                                                                                                   
-BenchmarkSeal-14                         1428846             851.2 ns/op                            1024 B/op          2 allocs/op                                                                                                                                                   
-BenchmarkOpen-14                         1292317             935.7 ns/op                            1064 B/op          4 allocs/op                                                                                                                                                   
-BenchmarkHash/16B-14                     2052022             576.8 ns/op          27.74 MB/s          56 B/op          2 allocs/op                                                                                                                                   
-BenchmarkHash/256B-14                    1832782             663.8 ns/op         385.67 MB/s          56 B/op          2 allocs/op                                                                                                                                   
-BenchmarkHash/1KiB-14                     958070              1245 ns/op         822.52 MB/s          56 B/op          2 allocs/op                                                                                                                                   
-BenchmarkHash/16KiB-14                     60180             20262 ns/op         808.60 MB/s       49208 B/op          5 allocs/op                                                                                                                                   
-BenchmarkHash/1MiB-14                       5110            236621 ns/op        4431.45 MB/s       49208 B/op          5 allocs/op                                                                                                                                   
-BenchmarkPRF/16B-14                      2134442             555.3 ns/op          28.81 MB/s          24 B/op          1 allocs/op                                                                                                                                   
-BenchmarkPRF/256B-14                     1842481             652.3 ns/op         392.46 MB/s          24 B/op          1 allocs/op                                                                                                                                   
-BenchmarkPRF/1KiB-14                      995347              1246 ns/op         822.15 MB/s          24 B/op          1 allocs/op                                                                                                                                   
-BenchmarkPRF/16KiB-14                     104713             11520 ns/op        1422.25 MB/s          24 B/op          1 allocs/op                                                                                                                                   
-BenchmarkPRF/1MiB-14                        1738            713063 ns/op        1470.52 MB/s          24 B/op          1 allocs/op                                                                                                                                   
-BenchmarkStream/16B-14                   1605544             749.2 ns/op          21.36 MB/s        1096 B/op          4 allocs/op                                                                                                                                   
-BenchmarkStream/256B-14                  1219921             981.3 ns/op         260.89 MB/s        1096 B/op          4 allocs/op                                                                                                                   
-BenchmarkStream/1KiB-14                   799382              1521 ns/op         673.45 MB/s        1096 B/op          4 allocs/op
-BenchmarkStream/16KiB-14                   78758             15705 ns/op        1043.26 MB/s       33864 B/op          6 allocs/op
-BenchmarkStream/1MiB-14                     3859            300056 ns/op        3494.60 MB/s       33864 B/op          6 allocs/op
-BenchmarkAEAD/16B-14                      984907              1256 ns/op          25.47 MB/s        1048 B/op          3 allocs/op
-BenchmarkAEAD/256B-14                     955036              1201 ns/op         226.56 MB/s        1048 B/op          3 allocs/op
-BenchmarkAEAD/1KiB-14                     588542              1974 ns/op         526.76 MB/s        1048 B/op          3 allocs/op
-BenchmarkAEAD/16KiB-14                     55228             22122 ns/op         741.33 MB/s       50200 B/op          6 allocs/op
-BenchmarkAEAD/1MiB-14                       3855            305614 ns/op        3431.10 MB/s       50200 B/op          6 allocs/op
+goos: darwin
+goarch: arm64
+pkg: github.com/codahale/lockstitch-go
+cpu: Apple M4 Pro
+BenchmarkInit-14                        21773214             54.45 ns/op                              40 B/op          2 allocs/op
+BenchmarkMix-14                         44373364             25.29 ns/op                               0 B/op          0 allocs/op
+BenchmarkDerive-14                       2542819             466.1 ns/op                               0 B/op          0 allocs/op
+BenchmarkEncrypt-14                      1326536             903.8 ns/op                            1088 B/op          3 allocs/op
+BenchmarkDecrypt-14                      1344568             891.9 ns/op                            1088 B/op          3 allocs/op
+BenchmarkSeal-14                         1000000              1103 ns/op                            1024 B/op          2 allocs/op
+BenchmarkOpen-14                          989258              1225 ns/op                            1064 B/op          4 allocs/op
+BenchmarkHash/16B-14                     2156268             554.5 ns/op          28.85 MB/s          56 B/op          2 allocs/op
+BenchmarkHash/256B-14                    1881498             637.5 ns/op         401.55 MB/s          56 B/op          2 allocs/op
+BenchmarkHash/1KiB-14                     939432              1233 ns/op         830.81 MB/s          56 B/op          2 allocs/op
+BenchmarkHash/16KiB-14                     59565             19934 ns/op         821.93 MB/s       49208 B/op          5 allocs/op
+BenchmarkHash/1MiB-14                       5101            230911 ns/op        4541.04 MB/s       49208 B/op          5 allocs/op
+BenchmarkPRF/16B-14                      2225454             538.3 ns/op          29.72 MB/s          24 B/op          1 allocs/op
+BenchmarkPRF/256B-14                     1846458             650.7 ns/op         393.42 MB/s          24 B/op          1 allocs/op
+BenchmarkPRF/1KiB-14                      991215              1205 ns/op         849.61 MB/s          24 B/op          1 allocs/op
+BenchmarkPRF/16KiB-14                     108258             11123 ns/op        1472.98 MB/s          24 B/op          1 allocs/op
+BenchmarkPRF/1MiB-14                        1734            688102 ns/op        1523.87 MB/s          24 B/op          1 allocs/op
+BenchmarkStream/16B-14                   1215308             983.8 ns/op          16.26 MB/s        1112 B/op          4 allocs/op
+BenchmarkStream/256B-14                  1000000              1003 ns/op         255.19 MB/s        1112 B/op          4 allocs/op
+BenchmarkStream/1KiB-14                  1000000              1095 ns/op         934.97 MB/s        1112 B/op          4 allocs/op
+BenchmarkStream/16KiB-14                  400563              2883 ns/op        5682.62 MB/s        1112 B/op          4 allocs/op
+BenchmarkStream/1MiB-14                     9552            123684 ns/op        8477.85 MB/s        1112 B/op          4 allocs/op
+BenchmarkAEAD/16B-14                      802926              1466 ns/op          21.83 MB/s        1048 B/op          3 allocs/op
+BenchmarkAEAD/256B-14                     783519              1496 ns/op         181.87 MB/s        1048 B/op          3 allocs/op
+BenchmarkAEAD/1KiB-14                     733905              1592 ns/op         653.22 MB/s        1048 B/op          3 allocs/op
+BenchmarkAEAD/16KiB-14                    347097              3383 ns/op        4848.16 MB/s        1048 B/op          3 allocs/op
+BenchmarkAEAD/1MiB-14                       9472            125945 ns/op        8325.78 MB/s        1048 B/op          3 allocs/op
 ```
