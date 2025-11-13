@@ -3,9 +3,12 @@
 Lockstitch is an incremental, stateful cryptographic primitive for symmetric-key cryptographic operations (e.g.,
 hashing, encryption, message authentication codes, and authenticated encryption) in complex protocols. Inspired by
 TupleHash, STROBE, Noise Protocol's stateful objects, Merlin transcripts, and Xoodyak's Cyclist mode, Lockstitch
-uses [KT128] and [AES-128] to provide 10+ Gb/sec performance on modern processors at a 128-bit security level.
+uses [KT128], [POLYVAL], and [AES-128] to provide 10+ Gb/sec performance on modern processors at a 128-bit security
+level.
 
 [KT128]: https://www.rfc-editor.org/rfc/rfc9861.html
+
+[POLYVAL]: https://www.rfc-editor.org/rfc/rfc8452.html
 
 [AES-128]: https://doi.org/10.6028/NIST.FIPS.197-upd1
 
@@ -96,7 +99,7 @@ forward secrecy.
 
 ```text
 function Derive((transcript, C), label, n):
-  transcript = transcript || 0x02 || left_encode(|label|) || label || left_encode(|left_encode(n)|) || left_encode(n)
+  transcript = transcript || 0x02 || left_encode(|label|) || label || left_encode(n)
   prf = expand((transcript, C), "prf output", n)
   transcript = ratchet((transcript, C))
   return ((transcript, C), prf)
@@ -142,26 +145,31 @@ extracted from the protocol's transcript, the label, and the output length.
 ```text
 function Encrypt((transcript, C), label, plaintext):
   transcript = transcript || 0x03 || left_encode(|label|) || label || left_encode(|plaintext|)
-  dk || iv = expand((transcript, C), "data encryption key", 128+128)
-  transcript = transcript || plaintext
-  ciphertext = AES128CTR(dk, iv, plaintext)
+  dek || iv = expand((transcript, C), "data encryption key", 128+128)
+  dak = expand((transcript, C), "data authentication key", 128)
+  ciphertext = AES128CTR(dek, iv, plaintext)
+  auth = POLYVAL(dak, plaintext)
+  transcript = transcript || auth 
   transcript = ratchet((transcript, C))
   return ((transcript, C), ciphertext)
   
 function Decrypt((transcript, S), label, ciphertext):
   transcript = transcript || 0x03 || left_encode(|label|) || label || left_encode(|ciphertext|)
-  dk || iv = expand((transcript, C), "data encryption key", 128+128)
-  transcript = transcript || plaintext
-  plaintext = AES128CTR(dk, iv, ciphertext)
+  dek || iv = expand((transcript, C), "data encryption key", 128+128)
+  dak = expand((transcript, C), "data authentication key", 128)
+  plaintext = AES128CTR(dek, iv, ciphertext)
+  auth = POLYVAL(dak, plaintext)
+  transcript = transcript || auth 
   transcript = ratchet((transcript, C))
   return ((transcript, C), plaintext)
 ```
 
 `Encrypt` appends an operation code, the label length in bits, the label, and the plaintext length in bits to the
 transcript. It then hashes the transcript with KT128 (using the customization string established in the `Init`
-operation) and derives a 128-bit data encryption key and a 128-bit IV. The plaintext appended to the transcript and the
-transcript is ratcheted. Finally, the plaintext is encrypted with AES-128-CTR and the new transcript and ciphertext are
-returned.
+operation) and derives a 128-bit data encryption key, a 128-bit IV, and a 128-bit data authentication key. The data
+encryption key and IV are used to encrypt the plaintext with AES-128-CTR. The data authentication key is used to
+calculate a POLYVAL authenticator of the plaintext. Finally, the POLYVAL authenticator is appended to the transcript
+and the transcript is ratcheted.
 
 Two points bear mentioning about `Encrypt` and `Decrypt`:
 
@@ -187,18 +195,22 @@ authentication tag. The `Seal` operation verifies the tag, returning an error if
 ```text
 function Seal((transcript, C), label, plaintext):
   transcript = transcript || 0x04 || left_encode(|label|) || label || left_encode(|plaintext|)
-  dk = expand((transcript, C), "data encryption key", 128)
-  transcript = transcript || plaintext
+  dek = expand((transcript, C), "data encryption key", 128)
+  dak = expand((transcript, C), "data authentication key", 128)
+  auth = POLYVAL(dak, plaintext)
+  transcript = transcript || auth
   tag = expand((transcript, C), "authentication tag", 128)
+  ciphertext = AES128CTR(dek, tag, plaintext)
   transcript = ratchet((transcript, C))
-  ciphertext = AES128CTR(dk, tag, plaintext)
   return ((transcript, C), ciphertext || tag)
  
 function Open((transcript, C), label, ciphertext || tag):
   transcript = transcript || 0x04 || left_encode(|label|) || label || left_encode(|ciphertext|)
-  dk = expand((transcript, C), "data encryption key", 128)
+  dek = expand((transcript, C), "data encryption key", 128)
+  dak = expand((transcript, C), "data authentication key", 128)
   plaintext = AES128CTR(dk, tag, ciphertext)
-  transcript = transcript || plaintext
+  auth = POLYVAL(dak, plaintext)
+  transcript = transcript || auth
   tag' = expand((transcript, C), "authentication tag", 128)
   transcript = ratchet((transcript, C))
   if tag != tag':
@@ -206,10 +218,10 @@ function Open((transcript, C), label, ciphertext || tag):
   return ((transcript, C), plaintext)
 ```
 
-This uses the [synthetic IV construction][SIV] to provide nonce-misuse resistant encryption, with KT128 serving as the
-PRF used to derive the IV from the plaintext. Because KT128 is collision-resistant, this construction (unlike
-e.g., [AES-SIV][AES-SIV]) is key-committing, and because the key is derived from the protocol state (again with
-KT128), this construction is therefore context-committing.
+This uses the [synthetic IV construction][SIV] to provide nonce-misuse resistant encryption, with POLYVAL and KT128
+serving as the PRF used to derive the IV from the plaintext. Because POLYVAL is eUF-CMA unforgeable and KT128 is
+collision-resistant, this construction (unlike e.g., [AES-SIV][AES-SIV]) is key-committing, and because the key is
+derived from the protocol state (again with KT128), this construction is therefore context-committing.
 
 [SIV]: https://www.iacr.org/archive/eurocrypt2006/40040377/40040377.pdf
 

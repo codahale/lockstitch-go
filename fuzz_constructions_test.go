@@ -12,14 +12,14 @@ func FuzzStream(f *testing.F) {
 		protocol := lockstitch.NewProtocol("stream")
 		protocol.Mix("key", key)
 		protocol.Mix("nonce", nonce)
-		return protocol.Encrypt("message", message[:0], message), protocol.Derive("state", nil, 8)
+		return protocol.Encrypt("message", nil, message), protocol.Derive("state", nil, 8)
 	}
 
 	decrypt := func(key []byte, nonce []byte, message []byte) (plaintext, state []byte) {
 		protocol := lockstitch.NewProtocol("stream")
 		protocol.Mix("key", key)
 		protocol.Mix("nonce", nonce)
-		return protocol.Decrypt("message", message[:0], message), protocol.Derive("state", nil, 8)
+		return protocol.Decrypt("message", nil, message), protocol.Derive("state", nil, 8)
 	}
 
 	f.Add([]byte("yellow submarine"), []byte("12345678"), []byte("hello world"))
