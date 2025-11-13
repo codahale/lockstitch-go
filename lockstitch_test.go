@@ -20,27 +20,6 @@ func TestProtocol_Clone(t *testing.T) {
 	}
 }
 
-func TestProtocol_MarshalBinary(t *testing.T) {
-	t.Parallel()
-
-	p1 := lockstitch.NewProtocol("example")
-	p1.Mix("a thing", []byte("another thing"))
-
-	state, err := p1.MarshalBinary()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	p2 := lockstitch.NewProtocol("example")
-	if err := p2.UnmarshalBinary(state); err != nil {
-		t.Fatal(err)
-	}
-
-	if got, want := p2.Derive("third", nil, 8), p1.Derive("third", nil, 8); !bytes.Equal(got, want) {
-		t.Errorf("Derive('third') = %x, want = %x", got, want)
-	}
-}
-
 func TestDeriveZeroOutputs(t *testing.T) {
 	t.Parallel()
 
@@ -75,22 +54,22 @@ func TestKnownAnswers(t *testing.T) {
 	protocol.Mix("first", []byte("one"))
 	protocol.Mix("second", []byte("two"))
 
-	if got, want := hex.EncodeToString(protocol.Derive("third", nil, 8)), "d86a504bc828ae8d"; got != want {
+	if got, want := hex.EncodeToString(protocol.Derive("third", nil, 8)), "d6bc7cf3309f4ea9"; got != want {
 		t.Errorf("Derive('third') = %v, want = %v", got, want)
 	}
 
 	plaintext := []byte("this is an example")
 	ciphertext := protocol.Encrypt("fourth", nil, plaintext)
-	if got, want := hex.EncodeToString(ciphertext), "3052ee3b84e66a02e0727525f54b1fd888f4"; got != want {
+	if got, want := hex.EncodeToString(ciphertext), "70c1fb16e62cb9c0f8ebae1d6404a30c7419"; got != want {
 		t.Errorf("Encrypt('fourth') = %v, want = %v", got, want)
 	}
 
 	ciphertext = protocol.Seal("fifth", nil, []byte("this is an example"))
-	if got, want := hex.EncodeToString(ciphertext), "52a7eb4dd9c5950292e60a44700b75c7a113b53e2629470e3ba9e88a4f8e323ac058"; got != want {
+	if got, want := hex.EncodeToString(ciphertext), "a42e10fa25dcc1ac95dc4782b6ea83b1da5c299ac8bbb3920c758d4a999856181663"; got != want {
 		t.Errorf("Seal('fifth') = %v, want = %v", got, want)
 	}
 
-	if got, want := hex.EncodeToString(protocol.Derive("sixth", nil, 8)), "e893541a8ce20dd0"; got != want {
+	if got, want := hex.EncodeToString(protocol.Derive("sixth", nil, 8)), "7691e36e76a8e403"; got != want {
 		t.Errorf("Derive('sixth') = %v, want = %v", got, want)
 	}
 }
