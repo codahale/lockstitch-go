@@ -8,79 +8,75 @@ import (
 
 func BenchmarkInit(b *testing.B) {
 	b.ReportAllocs()
-
 	for b.Loop() {
 		lockstitch.NewProtocol("mix")
 	}
 }
 
 func BenchmarkMix(b *testing.B) {
-	b.ReportAllocs()
-
 	p := lockstitch.NewProtocol("mix")
 	label := "label"
 	input := []byte("input")
+
+	b.ReportAllocs()
 	for b.Loop() {
 		p.Mix(label, input)
 	}
 }
 
 func BenchmarkDerive(b *testing.B) {
-	b.ReportAllocs()
-
 	p := lockstitch.NewProtocol("derive")
 	label := "label"
 	output := make([]byte, 32)
+
+	b.ReportAllocs()
 	for b.Loop() {
 		p.Derive(label, output[:0], len(output))
 	}
 }
 
 func BenchmarkEncrypt(b *testing.B) {
-	b.ReportAllocs()
-
 	p := lockstitch.NewProtocol("encrypt")
 	label := "label"
 	output := make([]byte, 32)
+
+	b.ReportAllocs()
 	for b.Loop() {
 		p.Encrypt(label, output[:0], output)
 	}
 }
 
 func BenchmarkDecrypt(b *testing.B) {
-	b.ReportAllocs()
-
 	p := lockstitch.NewProtocol("decrypt")
 	label := "label"
 	output := make([]byte, 32)
+
+	b.ReportAllocs()
 	for b.Loop() {
 		p.Decrypt(label, output[:0], output)
 	}
 }
 
 func BenchmarkSeal(b *testing.B) {
-	b.ReportAllocs()
-
 	p := lockstitch.NewProtocol("seal")
 	label := "label"
 	output := make([]byte, 32+lockstitch.TagLen)
+
+	b.ReportAllocs()
 	for b.Loop() {
 		p.Seal(label, output[:0], output[:32])
 	}
 }
 
 func BenchmarkOpen(b *testing.B) {
-	b.ReportAllocs()
-
-	label := "label"
-
 	output := make([]byte, 32)
 	p := lockstitch.NewProtocol("open")
-	ciphertext := p.Seal(label, nil, output)
+	ciphertext := p.Seal("label", nil, output)
 
+	b.ReportAllocs()
 	for b.Loop() {
 		p := lockstitch.NewProtocol("open")
-		if _, err := p.Open(label, output[:0], ciphertext); err != nil {
+		if _, err := p.Open("label", output[:0], ciphertext); err != nil {
 			b.Fatal(err)
 		}
 	}
