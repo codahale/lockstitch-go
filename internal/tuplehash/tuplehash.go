@@ -7,7 +7,7 @@ import (
 	"encoding/binary"
 	"math/bits"
 
-	"github.com/codahale/lockstitch-go/internal/mem"
+	mem "github.com/ericlagergren/subtle"
 )
 
 // LeftEncode encodes an integer value using NIST SP 800-185's left_encode and appends it to dst.

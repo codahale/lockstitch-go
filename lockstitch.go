@@ -16,9 +16,9 @@ import (
 	"errors"
 
 	"github.com/cloudflare/circl/xof/k12"
-	"github.com/codahale/lockstitch-go/internal/mem"
 	"github.com/codahale/lockstitch-go/internal/polyval"
 	"github.com/codahale/lockstitch-go/internal/tuplehash"
+	mem "github.com/ericlagergren/subtle"
 )
 
 // TagLen is the number of bytes added to the plaintext by the Seal operation.
