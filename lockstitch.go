@@ -47,8 +47,7 @@ func NewProtocol(domain string) Protocol {
 // Mix ratchets the protocol's state using the given label and input.
 func (p *Protocol) Mix(label string, input []byte) {
 	// Append the operation metadata and data to the transcript.
-	buf := make([]byte, 9)
-	_, _ = p.transcript.Write(append(buf[:0], opMix))
+	_, _ = p.transcript.Write([]byte{opMix})
 	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(label)) * 8))
 	_, _ = p.transcript.Write([]byte(label))
 	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(input)) * 8))
