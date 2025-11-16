@@ -15,7 +15,7 @@ import (
 	"crypto/subtle"
 	"errors"
 
-	"github.com/cloudflare/circl/xof/k12"
+	kt128 "github.com/cloudflare/circl/xof/k12"
 	"github.com/codahale/lockstitch-go/internal/polyval"
 	"github.com/codahale/lockstitch-go/internal/tuplehash"
 	mem "github.com/ericlagergren/subtle"
@@ -33,14 +33,14 @@ var (
 // A Protocol is a stateful object providing fine-grained symmetric-key cryptographic services like hashing, message
 // authentication codes, pseudo-random functions, authenticated encryption, and more.
 type Protocol struct {
-	transcript k12.State
+	transcript kt128.State
 }
 
 // NewProtocol creates a new Protocol with the given domain separation string.
 func NewProtocol(domain string) Protocol {
 	// Initialize a KT128 instance with a customization string of `lockstitch:{domain}`.
 	return Protocol{
-		transcript: k12.NewDraft10(append([]byte("lockstitch:"), []byte(domain)...)),
+		transcript: kt128.NewDraft10(append([]byte("lockstitch:"), []byte(domain)...)),
 	}
 }
 
