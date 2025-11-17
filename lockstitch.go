@@ -62,8 +62,6 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 		panic("invalid argument to Derive: n cannot be negative")
 	}
 
-	buf := make([]byte, 32)
-
 	// Append the operation metadata to the transcript.
 	_, _ = p.transcript.Write([]byte{opDerive})
 	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(label)) * 8))
@@ -74,7 +72,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	prf := p.expand(dst, "prf output", n)
 
 	// Ratchet the transcript.
-	p.ratchet(buf[:0])
+	p.ratchet()
 
 	return prf
 }
@@ -109,7 +107,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	aes128CTR(dek[:16], dek[16:], ciphertext, plaintext)
 
 	// Ratchet the transcript.
-	p.ratchet(buf[:0])
+	p.ratchet()
 
 	return ret
 }
@@ -143,7 +141,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	_, _ = p.transcript.Write(auth)
 
 	// Ratchet the transcript.
-	p.ratchet(buf[:0])
+	p.ratchet()
 
 	return ret
 }
@@ -184,7 +182,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	aes128CTR(dek, tag, ciphertext, plaintext)
 
 	// Ratchet the transcript.
-	p.ratchet(buf[:0])
+	p.ratchet()
 
 	return ret
 }
@@ -226,7 +224,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	valid := subtle.ConstantTimeCompare(tag, tagP) == 0
 
 	// Ratchet the transcript.
-	p.ratchet(buf[:0])
+	p.ratchet()
 
 	// Compare the tag and the counterfactual tag in constant time.
 	if valid {
@@ -242,9 +240,10 @@ func (p *Protocol) Clone() Protocol {
 
 // ratchet replaces the protocol's transcript with a ratchet operation code and a ratchet key derived from the previous
 // protocol transcript.
-func (p *Protocol) ratchet(dst []byte) {
+func (p *Protocol) ratchet() {
 	// Expand a ratchet key.
-	rak := p.expand(dst, "ratchet key", 32)
+	var rak [32]byte
+	p.expand(rak[:0], "ratchet key", 32)
 
 	// Clear the transcript.
 	p.transcript.Reset()
@@ -252,7 +251,7 @@ func (p *Protocol) ratchet(dst []byte) {
 	// Append the operation data to the transcript.
 	_, _ = p.transcript.Write([]byte{opRatchet})
 	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(rak)) * 8))
-	_, _ = p.transcript.Write(rak)
+	_, _ = p.transcript.Write(rak[:])
 }
 
 // expand clones the protocol's transcript, appends an expand operation code, the label length, the label, and the
