@@ -86,8 +86,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	// Allocate slices for the ciphertext and the keys.
 	ret, ciphertext := mem.SliceForAppend(dst, len(plaintext))
-	dek := make([]byte, aes128KeyLen+aes.BlockSize)
-	dak := make([]byte, polyval.KeyLen)
+	dek, dak := make([]byte, aes128KeyLen+aes.BlockSize), make([]byte, polyval.KeyLen)
 
 	// Append the operation metadata to the transcript.
 	_, _ = p.transcript.Write([]byte{opCrypt})
@@ -121,8 +120,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	// Allocate slice for the plaintext and keys.
 	ret, plaintext := mem.SliceForAppend(dst, len(ciphertext))
-	dek := make([]byte, aes128KeyLen+aes.BlockSize)
-	dak := make([]byte, polyval.KeyLen)
+	dek, dak := make([]byte, aes128KeyLen+aes.BlockSize), make([]byte, polyval.KeyLen)
 
 	// Append the operation metadata to the transcript.
 	_, _ = p.transcript.Write([]byte{opCrypt})
@@ -159,8 +157,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	// Allocate a slice for the ciphertext and split it between ciphertext and tag. Also allocate slices for keys.
 	ret, ciphertext := mem.SliceForAppend(dst, len(plaintext)+TagLen)
 	ciphertext, tag := ciphertext[:len(plaintext)], ciphertext[len(plaintext):]
-	dek := make([]byte, aes128KeyLen)
-	dak := make([]byte, polyval.KeyLen)
+	dek, dak := make([]byte, aes128KeyLen), make([]byte, polyval.KeyLen)
 
 	// Append the operation metadata to the transcript.
 	_, _ = p.transcript.Write([]byte{opAuthCrypt})
@@ -200,9 +197,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	// Split the ciphertext between ciphertext and tag. Allocate slices for plaintext, keys, and tag.
 	ciphertext, tag := ciphertext[:len(ciphertext)-TagLen], ciphertext[len(ciphertext)-TagLen:]
 	ret, plaintext := mem.SliceForAppend(dst, len(ciphertext))
-	dek := make([]byte, aes128KeyLen)
-	dak := make([]byte, polyval.KeyLen)
-	tagP := make([]byte, TagLen)
+	dek, dak, tagP := make([]byte, aes128KeyLen), make([]byte, polyval.KeyLen), make([]byte, TagLen)
 
 	// Append the operation metadata to the transcript.
 	_, _ = p.transcript.Write([]byte{opAuthCrypt})
