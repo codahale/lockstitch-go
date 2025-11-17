@@ -18,15 +18,15 @@ func FuzzAuthenticator(f *testing.F) {
 			t.Skip()
 		}
 
-		authAA := polyval.Authenticator(nil, keyA, msgA)
-		authAB := polyval.Authenticator(nil, keyA, msgB)
-		authBA := polyval.Authenticator(nil, keyB, msgA)
+		authAA := polyval.Authenticator(keyA, msgA)
+		authAB := polyval.Authenticator(keyA, msgB)
+		authBA := polyval.Authenticator(keyB, msgA)
 
-		if bytes.Equal(authAA, authAB) {
+		if bytes.Equal(authAA[:], authAB[:]) {
 			t.Error("same key, different messages, same authenticator")
 		}
 
-		if bytes.Equal(authAA, authBA) {
+		if bytes.Equal(authAA[:], authBA[:]) {
 			t.Log(keyA, keyB, msgA)
 			t.Error("different keys, same message, same authenticator")
 		}

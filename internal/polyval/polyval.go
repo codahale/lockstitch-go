@@ -13,9 +13,10 @@ import (
 	"github.com/ericlagergren/polyval"
 )
 
-// Authenticator calculates a POLYVAL authenticator of the given message with the given key. The 16-byte authenticator
-// is appended to dst.
-func Authenticator(dst, key, message []byte) []byte {
+const KeyLen = 16
+
+// Authenticator calculates a POLYVAL authenticator of the given message with the given key.
+func Authenticator(key, message []byte) [16]byte {
 	p, err := polyval.New(key)
 	if err != nil {
 		panic(err)
@@ -42,5 +43,7 @@ func Authenticator(dst, key, message []byte) []byte {
 	binary.LittleEndian.PutUint64(block[8:], uint64(n)*8)
 	p.Update(block)
 
-	return p.Sum(dst)
+	var out [16]byte
+	p.Sum(out[:0])
+	return out
 }
