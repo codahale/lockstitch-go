@@ -16,9 +16,8 @@ import (
 	"errors"
 
 	kt128 "github.com/cloudflare/circl/xof/k12"
-	"github.com/codahale/lockstitch-go/internal/polyval"
+	"github.com/codahale/lockstitch-go/internal/mem"
 	"github.com/codahale/lockstitch-go/internal/tuplehash"
-	mem "github.com/ericlagergren/subtle"
 )
 
 // TagLen is the number of bytes added to the plaintext by the Seal operation.
@@ -86,7 +85,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	// Allocate slices for the ciphertext and the keys.
 	ret, ciphertext := mem.SliceForAppend(dst, len(plaintext))
-	dek, dak := make([]byte, aes128KeyLen+aes.BlockSize), make([]byte, polyval.KeyLen)
+	dek, dak := make([]byte, aes128KeyLen+aes.BlockSize), make([]byte, aes128KeyLen+gcmNonceLen)
 
 	// Append the operation metadata to the transcript.
 	_, _ = p.transcript.Write([]byte{opCrypt})
@@ -98,11 +97,11 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	p.expand("data encryption key", dek)
 	p.expand("data authentication key", dak)
 
-	// Calculate a POLYVAL authentication of the plaintext.
-	auth := polyval.Authenticator(dak, plaintext)
+	// Calculate an AES-128-GMAC authenticator of the plaintext.
+	auth := aes12GMAC(dak[:aes128KeyLen], dak[aes128KeyLen:aes128KeyLen+gcmNonceLen], dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
-	_, _ = p.transcript.Write(auth[:])
+	_, _ = p.transcript.Write(auth)
 
 	// Encrypt the plaintext using AES-128-CTR.
 	aes128CTR(dek[:aes128KeyLen], dek[aes128KeyLen:], ciphertext, plaintext)
@@ -120,7 +119,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	// Allocate slice for the plaintext and keys.
 	ret, plaintext := mem.SliceForAppend(dst, len(ciphertext))
-	dek, dak := make([]byte, aes128KeyLen+aes.BlockSize), make([]byte, polyval.KeyLen)
+	dek, dak := make([]byte, aes128KeyLen+aes.BlockSize), make([]byte, aes128KeyLen+gcmNonceLen)
 
 	// Append the operation metadata to the transcript.
 	_, _ = p.transcript.Write([]byte{opCrypt})
@@ -135,11 +134,11 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	// Decrypt the ciphertext using AES-128-CTR.
 	aes128CTR(dek[:aes128KeyLen], dek[aes128KeyLen:], plaintext, ciphertext)
 
-	// Calculate a POLYVAL authentication of the plaintext.
-	auth := polyval.Authenticator(dak, plaintext)
+	// Calculate an AES-128-GMAC authenticator of the plaintext.
+	auth := aes12GMAC(dak[:aes128KeyLen], dak[aes128KeyLen:aes128KeyLen+gcmNonceLen], dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
-	_, _ = p.transcript.Write(auth[:])
+	_, _ = p.transcript.Write(auth)
 
 	// Ratchet the transcript.
 	p.ratchet()
@@ -157,7 +156,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	// Allocate a slice for the ciphertext and split it between ciphertext and tag. Also allocate slices for keys.
 	ret, ciphertext := mem.SliceForAppend(dst, len(plaintext)+TagLen)
 	ciphertext, tag := ciphertext[:len(plaintext)], ciphertext[len(plaintext):]
-	dek, dak := make([]byte, aes128KeyLen), make([]byte, polyval.KeyLen)
+	dek, dak := make([]byte, aes128KeyLen), make([]byte, aes128KeyLen+gcmNonceLen)
 
 	// Append the operation metadata to the transcript.
 	_, _ = p.transcript.Write([]byte{opAuthCrypt})
@@ -169,11 +168,11 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	p.expand("data encryption key", dek)
 	p.expand("data authentication key", dak)
 
-	// Calculate a POLYVAL authentication of the plaintext.
-	auth := polyval.Authenticator(dak, plaintext)
+	// Calculate an AES-128-GMAC authenticator of the plaintext.
+	auth := aes12GMAC(dak[:aes128KeyLen], dak[aes128KeyLen:aes128KeyLen+gcmNonceLen], dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
-	_, _ = p.transcript.Write(auth[:])
+	_, _ = p.transcript.Write(auth)
 
 	// Expand an authentication tag.
 	p.expand("authentication tag", tag)
@@ -197,7 +196,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	// Split the ciphertext between ciphertext and tag. Allocate slices for plaintext, keys, and tag.
 	ciphertext, tag := ciphertext[:len(ciphertext)-TagLen], ciphertext[len(ciphertext)-TagLen:]
 	ret, plaintext := mem.SliceForAppend(dst, len(ciphertext))
-	dek, dak, tagP := make([]byte, aes128KeyLen), make([]byte, polyval.KeyLen), make([]byte, TagLen)
+	dek, dak, tagP := make([]byte, aes128KeyLen), make([]byte, aes128KeyLen+gcmNonceLen), make([]byte, TagLen)
 
 	// Append the operation metadata to the transcript.
 	_, _ = p.transcript.Write([]byte{opAuthCrypt})
@@ -212,11 +211,11 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	// Decrypt the ciphertext using AES-128-CTR with the tag as the IV.
 	aes128CTR(dek, tag, plaintext, ciphertext)
 
-	// Calculate a POLYVAL authentication of the plaintext.
-	auth := polyval.Authenticator(dak, plaintext)
+	// Calculate an AES-128-GMAC authenticator of the plaintext.
+	auth := aes12GMAC(dak[:aes128KeyLen], dak[aes128KeyLen:aes128KeyLen+gcmNonceLen], dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
-	_, _ = p.transcript.Write(auth[:])
+	_, _ = p.transcript.Write(auth)
 
 	// Expand a counterfactual authentication tag.
 	p.expand("authentication tag", tagP)
@@ -272,6 +271,18 @@ func aes128CTR(key, iv, dst, src []byte) {
 	ctr.XORKeyStream(dst, src)
 }
 
+func aes12GMAC(key, nonce, dst, src []byte) []byte {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		panic(err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		panic(err)
+	}
+	return gcm.Seal(dst, nonce, nil, src)
+}
+
 const (
 	opMix       = 0x01
 	opDerive    = 0x02
@@ -282,5 +293,6 @@ const (
 
 	ratchetKeyLen = 32
 	aes128KeyLen  = 16
+	gcmNonceLen   = 12
 	bitsPerByte   = 8
 )

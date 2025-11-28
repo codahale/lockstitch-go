@@ -65,11 +65,11 @@ func TestKnownAnswers(t *testing.T) {
 	}
 
 	ciphertext = protocol.Seal("fifth", nil, []byte("this is an example"))
-	if got, want := hex.EncodeToString(ciphertext), "4b5df55f9d49c1e315e48c65c7f2c5dbab85db788492bdcccb97b770ceb7b3d341b0"; got != want {
+	if got, want := hex.EncodeToString(ciphertext), "206184994337922d270bc160009a0128ad19b8bd85a92279b45387f646c99a8fef70"; got != want {
 		t.Errorf("Seal('fifth') = %v, want = %v", got, want)
 	}
 
-	if got, want := hex.EncodeToString(protocol.Derive("sixth", nil, 8)), "91613d1b79386592"; got != want {
+	if got, want := hex.EncodeToString(protocol.Derive("sixth", nil, 8)), "953240956c21690a"; got != want {
 		t.Errorf("Derive('sixth') = %v, want = %v", got, want)
 	}
 }
