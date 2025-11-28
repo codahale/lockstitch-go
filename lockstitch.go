@@ -275,21 +275,16 @@ func (p *Protocol) ratchet() {
 // expand clones the protocol's transcript, appends an expand operation code, the label length, the label, and the
 // requested output length, and fills the out slice with derived data.
 func (p *Protocol) expand(label string, out []byte) {
-	state, err := p.transcript.(encoding.BinaryMarshaler).MarshalBinary() //nolint:errcheck // cannot panic
-	if err != nil {
-		panic(err)
-	}
+	// Create a copy of the transcript.
+	h := p.Clone().transcript
 
-	h := sha512.New512_256()
-	if err := h.(encoding.BinaryUnmarshaler).UnmarshalBinary(state); err != nil { //nolint:errcheck // cannot panic
-		panic(err)
-	}
-
+	// Append the operation metadata and data to the transcript copy.
 	h.Write([]byte{opExpand})
 	h.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
 	h.Write([]byte(label))
 	h.Write(tuplehash.RightEncode(uint64(len(out)) * bitsPerByte))
 
+	// Generate up to 32 bytes of output.
 	switch {
 	case len(out) == h.Size():
 		h.Sum(out[:0])
