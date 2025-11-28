@@ -3,12 +3,12 @@
 Lockstitch is an incremental, stateful cryptographic primitive for symmetric-key cryptographic operations (e.g.,
 hashing, encryption, message authentication codes, and authenticated encryption) in complex protocols. Inspired by
 TupleHash, STROBE, Noise Protocol's stateful objects, Merlin transcripts, and Xoodyak's Cyclist mode, Lockstitch
-uses [KT128], [POLYVAL], and [AES-128] to provide 10+ Gb/sec performance on modern processors at a 128-bit security
+uses [SHA-512/256], [AES-128], and [GMAC] to provide 10+ Gb/sec performance on modern processors at a 128-bit security
 level.
 
-[KT128]: https://www.rfc-editor.org/rfc/rfc9861.html
+[SHA-512/256]: https://doi.org/10.6028/NIST.FIPS.180-4
 
-[POLYVAL]: https://www.rfc-editor.org/rfc/rfc8452.html
+[GMAC]: https://doi.org/10.6028/NIST.SP.800-38D
 
 [AES-128]: https://doi.org/10.6028/NIST.FIPS.197-upd1
 
@@ -34,13 +34,13 @@ communicate the source of the input or the intended use of the output. The label
 
 ### `Init`
 
-An `Init` operation initializes a Lockstitch protocol with an empty transcript and a domain separation string:
+An `Init` operation initializes a Lockstitch protocol with a transcript consisting of an operation code and a domain
+separation string:
 
 ```text
 function Init(domain):
-  transcript = ""
-  C = "lockstitch:" || domain
-  return (transcript, C)
+  transcript = 0x01 || left_encode(|domain|) || domain
+  return transcript
 ``` 
 
 **IMPORTANT:** The `Init` operation is only performed once, when a protocol is initialized.
@@ -53,43 +53,51 @@ The BLAKE3 recommendations for KDF context strings apply equally to Lockstitch p
 > attacker in any scenario to cause two different applications or components to inadvertently use the same context
 > string. The safest way to guarantee this is to prevent the context string from including input of any kind.
 
+`Init` encodes the length of the domain separation string in bits using the `left_encode` function
+from [NIST SP 800-185][]. This ensures an unambiguous and recoverable encoding for any domain separation string,
+regardless of length.
+
+[NIST SP 800-185]: https://www.nist.gov/publications/sha-3-derived-functions-cshake-kmac-tuplehash-and-parallelhash
+
 ### `Mix`
 
 A `Mix` operation accepts a label and an input, encodes them, and appends them to the protocol's transcript along with a
 constant operation code:
 
 ```text
-function Mix((transcript, C), label, input):
+function Mix(transcript, label, input):
   transcript = transcript || 0x01 || left_encode(|label|) || label || left_encode(|input|) || input
-  return (transcript, C)
+  return transcript
 ```
 
 `Mix` encodes the length of the label and input in bits using the `left_encode` function from [NIST SP 800-185][]. This
 ensures an unambiguous and recoverable encoding for any combination of label and input, regardless of length.
 
-[NIST SP 800-185]: https://www.nist.gov/publications/sha-3-derived-functions-cshake-kmac-tuplehash-and-parallelhash
-
-If the protocol has a stream of unknown length as an input, the stream should be first hashed with KT128 to securely
-reduce it to an input with a known length.
+If the protocol has a stream of unknown length as an input, the stream should be first hashed with e.g., SHA-256 to
+securely reduce it to an input with a known length.
 
 ### `Derive`
 
 A `Derive` operation accepts a label and an output length and returns pseudorandom data derived from the protocol's
 state, the label, and the output length. This requires two helper functions: `expand`, which hashes the protocol's
-transcript with KT128 and generates a derived value, and `ratchet`, which replaces the protocol's transcript with
+transcript with SHA-512/256 and generates a derived value, and `ratchet`, which replaces the protocol's transcript with
 derived output:
 
 ```text
-function expand((transcript, C), label, n):
-  return KT128(M=transcript || 0x05 || left_encode(|label|) || label || right_encode(n), C, L=n)
+function expand(transcript, label, n):
+  return SHA_512_256(transcript || 0x05 || left_encode(|label|) || label || right_encode(n))
 ```
 
 `expand` appends an operation code, label length, label, and output length to a copy of the protocol's transcript,
-hashes it with KT128, and returns the requested XOF output. Each `expand` call can be modeled as a random oracle.
+hashes it with SHA-512/256, and returns the requested output of up to 256 bits. SHA-512/256 truncates the output of a
+full SHA-512 hash, which makes it an example of the [AMAC] PRF construction. Consequently, each `expand` call can be
+modeled as a random oracle relative to the transcript, label, and output length.
+
+[AMAC]: https://eprint.iacr.org/2016/142
 
 ```text
-function ratchet((transcript, C)):
-  rak = expand((transcript, C), "ratchet key", 256)
+function ratchet(transcript):
+  rak = expand(transcript, "ratchet key", 256)
   return 0x06 || left_encode(|rak|) || rak
 ```
 
@@ -98,27 +106,30 @@ code, the ratchet key length, and the ratchet key. By replacing the transcript w
 forward secrecy.
 
 ```text
-function Derive((transcript, C), label, n):
+function Derive(transcript, label, n):
   transcript = transcript || 0x02 || left_encode(|label|) || label || left_encode(n)
-  prf = expand((transcript, C), "prf output", n)
-  transcript = ratchet((transcript, C))
-  return ((transcript, C), prf)
+  kn = expand(transcript, "prf key", 32)
+  prf = AES_128_CTR(kn[:16], kn[16:], [0x00; n])
+  transcript = ratchet(transcript)
+  return (transcript, prf)
 ```
 
 `Derive` appends an operation code, the label length in bits, the label, and the requested output length in bits to the
-transcript. It then hashes the transcript with KT128 (using the customization string established in the `Init`
-operation) and expands `n` bits of PRF output to return. Finally, the transcript is ratcheted.
+transcript. It expands the transcript into a AES-128-CTR key and IV, generates `n` bits of PRF output from the
+AES-128-CTR keystream, and finally ratchets the transcript.
 
 **IMPORTANT:** A `Derive` operation's output depends on both the label and the output length.
 
 #### KDF Security
 
 A sequence of `Mix` operations followed by a `Derive` operation (or other operations which produce output via `expand`)
-is effectively the construction of a KT128 input string using a recoverable encoding (i.e., one that can be
-unambiguously parsed left-to-right) which includes the XOF output length. Given KT128's security claim of being
-indistinguishable from a random oracle up to a computational complexity of ~128 bits, this construction maps directly
-to [Backendal et al.'s RO-KDF construction][n-KDFs] and is a KDF-secure XOF-n-KDF. If any one of the inputs is
-unpredictable, the derived output is unpredictable.
+is effectively the construction of a SHA-512/256 input string using a recoverable encoding (i.e., one that can be
+unambiguously parsed left-to-right) which includes the derived output length. Given SHA-512/256's
+[security claim][SP 800-107] of being indistinguishable from a random oracle up to a computational complexity of ~128
+bits, this construction maps directly to [Backendal et al.'s RO-KDF construction][n-KDFs] and is a KDF-secure XOF-n-KDF.
+If any one of the inputs is unpredictable, the derived output is unpredictable.
+
+[SP 800-107]: https://doi.org/10.6028/NIST.SP.800-107r1
 
 [n-KDFs]: https://eprint.iacr.org/2025/657.pdf
 
@@ -143,33 +154,32 @@ The `Encrypt` and `Decrypt` operations accept a label and an input and encrypts 
 extracted from the protocol's transcript, the label, and the output length.
 
 ```text
-function Encrypt((transcript, C), label, plaintext):
+function Encrypt(transcript, label, plaintext):
   transcript = transcript || 0x03 || left_encode(|label|) || label || left_encode(|plaintext|)
-  dek || iv = expand((transcript, C), "data encryption key", 128+128)
-  dak = expand((transcript, C), "data authentication key", 128)
-  ciphertext = AES128CTR(dek, iv, plaintext)
-  auth = POLYVAL(dak, plaintext)
+  dek || iv = expand(transcript, "data encryption key", 128+128)
+  dak = expand(transcript, "data authentication key", 128+96)
+  ciphertext = AES_128_CTR(dek, iv, plaintext)
+  auth = AES_128_GMAC(dak[:16], dak[16:], plaintext)
   transcript = transcript || auth 
-  transcript = ratchet((transcript, C))
-  return ((transcript, C), ciphertext)
+  transcript = ratchet(transcript)
+  return (transcript, ciphertext)
   
 function Decrypt((transcript, S), label, ciphertext):
   transcript = transcript || 0x03 || left_encode(|label|) || label || left_encode(|ciphertext|)
-  dek || iv = expand((transcript, C), "data encryption key", 128+128)
-  dak = expand((transcript, C), "data authentication key", 128)
-  plaintext = AES128CTR(dek, iv, ciphertext)
-  auth = POLYVAL(dak, plaintext)
+  dek || iv = expand(transcript, "data encryption key", 128+128)
+  dak = expand(transcript, "data authentication key", 128+96)
+  plaintext = AES_128_CTR(dek, iv, ciphertext)
+  auth = AES_128_GMAC(dak[:16], dak[16:], plaintext)
   transcript = transcript || auth 
-  transcript = ratchet((transcript, C))
-  return ((transcript, C), plaintext)
+  transcript = ratchet(transcript)
+  return (transcript, plaintext)
 ```
 
 `Encrypt` appends an operation code, the label length in bits, the label, and the plaintext length in bits to the
-transcript. It then hashes the transcript with KT128 (using the customization string established in the `Init`
-operation) and derives a 128-bit data encryption key, a 128-bit IV, and a 128-bit data authentication key. The data
-encryption key and IV are used to encrypt the plaintext with AES-128-CTR. The data authentication key is used to
-calculate a POLYVAL authenticator of the plaintext. Finally, the POLYVAL authenticator is appended to the transcript
-and the transcript is ratcheted.
+transcript. It then hashes the transcript with SHA-512/256 and derives a 128-bit data encryption key, a 128-bit IV, a
+128-bit data authentication key, and a 128-bit nonce. The data encryption key and IV are used to encrypt the plaintext
+with AES-128-CTR. The data authentication key and nonce are used to calculate an AES-128-GMAC authenticator of the
+plaintext. Finally, the GMAC authenticator is appended to the transcript and the transcript is ratcheted.
 
 Two points bear mentioning about `Encrypt` and `Decrypt`:
 
@@ -181,8 +191,8 @@ Two points bear mentioning about `Encrypt` and `Decrypt`:
    will be able to detect duplicate plaintexts (i.e., not IND-CPA secure) and produce modified ciphertexts which
    successfully decrypt (i.e., not IND-CCA secure).
 
-   That said, the divergent ciphertext input will result in divergent protocol transcripts, as the plaintext is added to
-   the transcript.
+   That said, the divergent ciphertext input will result in divergent protocol transcripts, as the GMAC authenticator of
+   the plaintext is added to the transcript.
 
    For IND-CPA security, the protocol's state must include a probabilistic value (like a nonce) and for IND-CCA
    security, use [`Seal`/`Open`](#sealopen).
@@ -193,35 +203,35 @@ Two points bear mentioning about `Encrypt` and `Decrypt`:
 authentication tag. The `Seal` operation verifies the tag, returning an error if the tag is invalid.
 
 ```text
-function Seal((transcript, C), label, plaintext):
+function Seal(transcript, label, plaintext):
   transcript = transcript || 0x04 || left_encode(|label|) || label || left_encode(|plaintext|)
-  dek = expand((transcript, C), "data encryption key", 128)
-  dak = expand((transcript, C), "data authentication key", 128)
-  auth = POLYVAL(dak, plaintext)
+  dek = expand(transcript, "data encryption key", 128)
+  dak = expand(transcript, "data authentication key", 128+96)
+  auth = AES_128_GMAC(dak[:16], dak[16:], plaintext)
   transcript = transcript || auth
-  tag = expand((transcript, C), "authentication tag", 128)
-  ciphertext = AES128CTR(dek, tag, plaintext)
-  transcript = ratchet((transcript, C))
-  return ((transcript, C), ciphertext || tag)
+  tag = expand(transcript, "authentication tag", 128)
+  ciphertext = AES_128_CTR(dek, tag, plaintext)
+  transcript = ratchet(transcript)
+  return (transcript, ciphertext || tag)
  
-function Open((transcript, C), label, ciphertext || tag):
+function Open(transcript, label, ciphertext || tag):
   transcript = transcript || 0x04 || left_encode(|label|) || label || left_encode(|ciphertext|)
-  dek = expand((transcript, C), "data encryption key", 128)
-  dak = expand((transcript, C), "data authentication key", 128)
-  plaintext = AES128CTR(dk, tag, ciphertext)
-  auth = POLYVAL(dak, plaintext)
+  dek = expand(transcript, "data encryption key", 128)
+  dak = expand(transcript, "data authentication key", 128+96)
+  plaintext = AES_128_CTR(dk, tag, ciphertext)
+  auth = AES_128_GMAC(dak[:16], dak[16:], plaintext)
   transcript = transcript || auth
-  tag' = expand((transcript, C), "authentication tag", 128)
-  transcript = ratchet((transcript, C))
+  tag' = expand(transcript, "authentication tag", 128)
+  transcript = ratchet(transcript)
   if tag != tag':
-    return ((transcript, C), "")
-  return ((transcript, C), plaintext)
+    return (transcript, "")
+  return (transcript, plaintext)
 ```
 
-This uses the [synthetic IV construction][SIV] to provide nonce-misuse resistant encryption, with POLYVAL and KT128
-serving as the PRF used to derive the IV from the plaintext. Because POLYVAL is eUF-CMA unforgeable and KT128 is
-collision-resistant, this construction (unlike e.g., [AES-SIV][AES-SIV]) is key-committing, and because the key is
-derived from the protocol state (again with KT128), this construction is therefore context-committing.
+This uses the [synthetic IV construction][SIV] to provide nonce-misuse resistant encryption, with SHA-512/256 and
+AES-128-GMAC serving as the PRF used to derive the IV from the plaintext. Because GMAC is eUF-CMA unforgeable and
+SHA-512/256 is collision-resistant, this construction (unlike e.g., [AES-SIV][AES-SIV]) is key-committing, and because
+the key is derived from the protocol state (again with SHA-512/256), this construction is therefore context-committing.
 
 [SIV]: https://www.iacr.org/archive/eurocrypt2006/40040377/40040377.pdf
 
@@ -247,7 +257,8 @@ function MessageDigest(message):
   return digest
 ```
 
-This construction is indistinguishable from a random oracle if KT128 is indistinguishable from a random oracle.
+This construction is indistinguishable from a random oracle if SHA-512/256 is indistinguishable from a random oracle and
+AES-128-CTR is PRF secure.
 
 ### Message Authentication Codes
 
@@ -265,7 +276,8 @@ function MAC(key, message):
 The use of labels and the encoding of [`Mix` inputs](#mix) ensures that the key and the message will never overlap, even
 if their lengths vary.
 
-This construction is sUF-CMA secure if KT128 is indistinguishable from a random oracle.
+This construction is sUF-CMA secure if SHA-512/256 is indistinguishable from a random oracle and AES-128-CTR is PRF
+secure.
 
 ### Stream Ciphers
 
@@ -290,8 +302,9 @@ function StreamDecrypt(key, nonce, ciphertext):
 This construction is IND-CPA-secure under the following assumptions:
 
 1. AES-128-CTR is IND-CPA-secure when used with a unique IV.
-2. KT128 is indistinguishable from a random oracle.
-3. At least one of the inputs to the protocol is a nonce (i.e., not used for multiple messages).
+2. SHA-512/256 is indistinguishable from a random oracle.
+3. AES-128-GMAC is eUF-CMA secure.
+4. At least one of the inputs to the protocol is a nonce (i.e., not used for multiple messages).
 
 ### Authenticated Encryption And Data (AEAD)
 
@@ -328,8 +341,9 @@ function AEADOpen(key, nonce, ad, ciphertext || tag):
 This construction is IND-CCA2-secure (i.e., both IND-CPA and INT-CTXT) under the following assumptions:
 
 1. AES-128-CTR is IND-CPA-secure when used with a unique IV.
-2. KT128 is indistinguishable from a random oracle.
-3. At least one of the inputs to the protocol is a nonce (i.e., not used for multiple messages).
+2. SHA-512/256 is indistinguishable from a random oracle.
+3. AES-128-GMAC is eUF-CMA secure.
+4. At least one of the inputs to the protocol is a nonce (i.e., not used for multiple messages).
 
 ## Complex Protocols
 
