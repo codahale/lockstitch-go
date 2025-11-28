@@ -43,6 +43,12 @@ function Init(domain):
   return transcript
 ``` 
 
+`Init` encodes the length of the domain separation string in bits using the `left_encode` function
+from [NIST SP 800-185][]. This ensures an unambiguous and recoverable encoding for any domain separation string,
+regardless of length.
+
+[NIST SP 800-185]: https://www.nist.gov/publications/sha-3-derived-functions-cshake-kmac-tuplehash-and-parallelhash
+
 **IMPORTANT:** The `Init` operation is only performed once, when a protocol is initialized.
 
 The BLAKE3 recommendations for KDF context strings apply equally to Lockstitch protocol domains:
@@ -52,12 +58,6 @@ The BLAKE3 recommendations for KDF context strings apply equally to Lockstitch p
 > mixed with the derived key afterwards.) … The purpose of this requirement is to ensure that there is no way for an
 > attacker in any scenario to cause two different applications or components to inadvertently use the same context
 > string. The safest way to guarantee this is to prevent the context string from including input of any kind.
-
-`Init` encodes the length of the domain separation string in bits using the `left_encode` function
-from [NIST SP 800-185][]. This ensures an unambiguous and recoverable encoding for any domain separation string,
-regardless of length.
-
-[NIST SP 800-185]: https://www.nist.gov/publications/sha-3-derived-functions-cshake-kmac-tuplehash-and-parallelhash
 
 ### `Mix`
 
@@ -85,13 +85,14 @@ derived output:
 
 ```text
 function expand(transcript, label, n):
-  return SHA_512_256(transcript || 0x05 || left_encode(|label|) || label || right_encode(n))
+  hash = SHA_512_256(transcript || 0x05 || left_encode(|label|) || label || right_encode(n))
+  return hash[:n]
 ```
 
 `expand` appends an operation code, label length, label, and output length to a copy of the protocol's transcript,
 hashes it with SHA-512/256, and returns the requested output of up to 256 bits. SHA-512/256 truncates the output of a
-full SHA-512 hash, which makes it an example of the [AMAC] PRF construction. Consequently, each `expand` call can be
-modeled as a random oracle relative to the transcript, label, and output length.
+full SHA-512 hash, which makes it an instantiation of the [AMAC] PRF construction. Consequently, each `expand` call can
+be modeled as a random oracle relative to the transcript, label, and output length.
 
 [AMAC]: https://eprint.iacr.org/2016/142
 
