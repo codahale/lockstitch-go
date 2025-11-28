@@ -14,7 +14,6 @@ import (
 	"crypto/cipher"
 	"crypto/sha512"
 	"crypto/subtle"
-	"encoding"
 	"errors"
 	"hash"
 
@@ -243,17 +242,13 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 }
 
 // Clone returns an exact clone of the receiver Protocol.
-func (p *Protocol) Clone() Protocol {
-	state, err := p.transcript.(encoding.BinaryMarshaler).MarshalBinary() //nolint:errcheck // cannot panic
+func (p *Protocol) Clone() (*Protocol, error) {
+	transcript, err := p.transcript.(hash.Cloner).Clone() //nolint:errcheck // cannot panic
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	transcript := sha512.New512_256()
-	if err := transcript.(encoding.BinaryUnmarshaler).UnmarshalBinary(state); err != nil { //nolint:errcheck // cannot panic
-		panic(err)
-	}
-	return Protocol{transcript}
+	return &Protocol{transcript}, nil
 }
 
 // ratchet replaces the protocol's transcript with a ratchet operation code and a ratchet key derived from the previous
@@ -276,7 +271,11 @@ func (p *Protocol) ratchet() {
 // requested output length, and fills the out slice with derived data.
 func (p *Protocol) expand(label string, out []byte) {
 	// Create a copy of the transcript.
-	h := p.Clone().transcript
+	clone, err := p.Clone()
+	if err != nil {
+		panic(err)
+	}
+	h := clone.transcript
 
 	// Append the operation metadata and data to the transcript copy.
 	h.Write([]byte{opExpand})

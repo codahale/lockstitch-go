@@ -13,7 +13,10 @@ func TestProtocol_Clone(t *testing.T) {
 
 	p1 := lockstitch.NewProtocol("example")
 	p1.Mix("a thing", []byte("another thing"))
-	p2 := p1.Clone()
+	p2, err := p1.Clone()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if got, want := p2.Derive("third", nil, 8), p1.Derive("third", nil, 8); !bytes.Equal(got, want) {
 		t.Errorf("Derive('third') = %x, want = %x", got, want)
