@@ -76,19 +76,12 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	keyAndIV := make([]byte, aes128KeyLen+aes.BlockSize)
 	p.expand("prf key", keyAndIV)
 
-	// Initialize an AES-128-CTR instance with the PRF key and IV.
-	block, err := aes.NewCipher(keyAndIV[:aes128KeyLen])
-	if err != nil {
-		panic(err)
-	}
-	ctr := cipher.NewCTR(block, keyAndIV[aes128KeyLen:])
-
 	// Expand n bytes of AES-128-CTR keystream for PRF output.
 	ret, prf := mem.SliceForAppend(dst, n)
 	for i := range prf {
-		prf[i] = 0
+		prf[i] = 0 // There's no way to get just the keystream from stdlib's CTR mode, so we ensure the input is zeroed.
 	}
-	ctr.XORKeyStream(prf, prf)
+	aes128CTR(keyAndIV[:aes128KeyLen], keyAndIV[aes128KeyLen:], prf, prf)
 
 	// Ratchet the transcript.
 	p.ratchet()
