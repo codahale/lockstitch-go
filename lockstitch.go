@@ -266,7 +266,7 @@ func (p *Protocol) ratchet() {
 	// Clear the transcript.
 	p.transcript.Reset()
 
-	// Append the operation data to the transcript.
+	// Append the operation metadata and data to the transcript.
 	p.transcript.Write([]byte{opRatchet})
 	p.transcript.Write(tuplehash.LeftEncode(uint64(len(rak)) * bitsPerByte))
 	p.transcript.Write(rak)
@@ -300,8 +300,8 @@ func aes128CTR(key, iv, dst, src []byte) {
 	if err != nil {
 		panic(err)
 	}
-	ctr := cipher.NewCTR(block, iv)
-	ctr.XORKeyStream(dst, src)
+
+	cipher.NewCTR(block, iv).XORKeyStream(dst, src)
 }
 
 func aes12GMAC(key, nonce, dst, src []byte) []byte {
@@ -309,10 +309,12 @@ func aes12GMAC(key, nonce, dst, src []byte) []byte {
 	if err != nil {
 		panic(err)
 	}
+
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
 		panic(err)
 	}
+
 	return gcm.Seal(dst, nonce, nil, src)
 }
 
