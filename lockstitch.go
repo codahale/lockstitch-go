@@ -1,21 +1,23 @@
 // Package lockstitch provides an incremental, stateful cryptographic primitive for symmetric-key cryptographic
 // operations (e.g., hashing, encryption, message authentication codes, and authenticated encryption) in complex
 // protocols. Inspired by TupleHash, STROBE, Noise Protocol's stateful objects, Merlin transcripts, and Xoodyak's
-// Cyclist mode, Lockstitch uses [KT128], [POLYVAL], and [AES-128] to provide 10+ Gb/sec performance on modern
+// Cyclist mode, Lockstitch uses [SHA-512/256], [AES-128], and [GMAC] to provide 10+ Gb/sec performance on modern
 // processors at a 128-bit security level.
 //
-// [KT128]: https://www.rfc-editor.org/rfc/rfc9861.html
-// [POLYVAL]: https://www.rfc-editor.org/rfc/rfc8452.html
+// [SHA-512/256]: https://doi.org/10.6028/NIST.FIPS.180-4
+// [GMAC]: https://doi.org/10.6028/NIST.SP.800-38D
 // [AES-128]: https://doi.org/10.6028/NIST.FIPS.197-upd1
 package lockstitch
 
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/sha512"
 	"crypto/subtle"
+	"encoding"
 	"errors"
+	"hash"
 
-	kt128 "github.com/cloudflare/circl/xof/k12"
 	"github.com/codahale/lockstitch-go/internal/mem"
 	"github.com/codahale/lockstitch-go/internal/tuplehash"
 )
@@ -32,25 +34,28 @@ var (
 // A Protocol is a stateful object providing fine-grained symmetric-key cryptographic services like hashing, message
 // authentication codes, pseudo-random functions, authenticated encryption, and more.
 type Protocol struct {
-	transcript kt128.State
+	transcript hash.Hash
 }
 
 // NewProtocol creates a new Protocol with the given domain separation string.
 func NewProtocol(domain string) Protocol {
-	// Initialize a KT128 instance with a customization string of `lockstitch:{domain}`.
-	return Protocol{
-		transcript: kt128.NewDraft10(append([]byte("lockstitch:"), []byte(domain)...)),
-	}
+	// Append the operation metadata to the transcript.
+	transcript := sha512.New512_256()
+	transcript.Write([]byte{opInit})
+	transcript.Write(tuplehash.LeftEncode(uint64(len(domain)) * bitsPerByte))
+	transcript.Write([]byte(domain))
+
+	return Protocol{transcript}
 }
 
 // Mix ratchets the protocol's state using the given label and input.
 func (p *Protocol) Mix(label string, input []byte) {
 	// Append the operation metadata and data to the transcript.
-	_, _ = p.transcript.Write([]byte{opMix})
-	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
-	_, _ = p.transcript.Write([]byte(label))
-	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(input)) * bitsPerByte))
-	_, _ = p.transcript.Write(input)
+	p.transcript.Write([]byte{opMix})
+	p.transcript.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
+	p.transcript.Write([]byte(label))
+	p.transcript.Write(tuplehash.LeftEncode(uint64(len(input)) * bitsPerByte))
+	p.transcript.Write(input)
 }
 
 // Derive generates pseudorandom output from the Protocol's current state, the label, and the output length, then
@@ -62,14 +67,28 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	}
 
 	// Append the operation metadata to the transcript.
-	_, _ = p.transcript.Write([]byte{opDerive})
-	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
-	_, _ = p.transcript.Write([]byte(label))
-	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(n) * bitsPerByte))
+	p.transcript.Write([]byte{opDerive})
+	p.transcript.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
+	p.transcript.Write([]byte(label))
+	p.transcript.Write(tuplehash.LeftEncode(uint64(n) * bitsPerByte))
 
-	// Expand n bytes of PRF output from the transcript.
+	// Expand a PRF key and IV.
+	keyAndIV := make([]byte, aes128KeyLen+aes.BlockSize)
+	p.expand("prf key", keyAndIV)
+
+	// Initialize an AES-128-CTR instance with the PRF key and IV.
+	block, err := aes.NewCipher(keyAndIV[:aes128KeyLen])
+	if err != nil {
+		panic(err)
+	}
+	ctr := cipher.NewCTR(block, keyAndIV[aes128KeyLen:])
+
+	// Expand n bytes of AES-128-CTR keystream for PRF output.
 	ret, prf := mem.SliceForAppend(dst, n)
-	p.expand("prf output", prf)
+	for i := range prf {
+		prf[i] = 0
+	}
+	ctr.XORKeyStream(prf, prf)
 
 	// Ratchet the transcript.
 	p.ratchet()
@@ -88,10 +107,10 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	dek, dak := make([]byte, aes128KeyLen+aes.BlockSize), make([]byte, aes128KeyLen+gcmNonceLen)
 
 	// Append the operation metadata to the transcript.
-	_, _ = p.transcript.Write([]byte{opCrypt})
-	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
-	_, _ = p.transcript.Write([]byte(label))
-	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(plaintext)) * bitsPerByte))
+	p.transcript.Write([]byte{opCrypt})
+	p.transcript.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
+	p.transcript.Write([]byte(label))
+	p.transcript.Write(tuplehash.LeftEncode(uint64(len(plaintext)) * bitsPerByte))
 
 	// Expand a data encryption key, an IV, and a data authentication key from the transcript.
 	p.expand("data encryption key", dek)
@@ -101,7 +120,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	auth := aes12GMAC(dak[:aes128KeyLen], dak[aes128KeyLen:aes128KeyLen+gcmNonceLen], dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
-	_, _ = p.transcript.Write(auth)
+	p.transcript.Write(auth)
 
 	// Encrypt the plaintext using AES-128-CTR.
 	aes128CTR(dek[:aes128KeyLen], dek[aes128KeyLen:], ciphertext, plaintext)
@@ -122,10 +141,10 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	dek, dak := make([]byte, aes128KeyLen+aes.BlockSize), make([]byte, aes128KeyLen+gcmNonceLen)
 
 	// Append the operation metadata to the transcript.
-	_, _ = p.transcript.Write([]byte{opCrypt})
-	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
-	_, _ = p.transcript.Write([]byte(label))
-	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(plaintext)) * bitsPerByte))
+	p.transcript.Write([]byte{opCrypt})
+	p.transcript.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
+	p.transcript.Write([]byte(label))
+	p.transcript.Write(tuplehash.LeftEncode(uint64(len(plaintext)) * bitsPerByte))
 
 	// Expand a data encryption key, an IV, and a data authentication key from the transcript.
 	p.expand("data encryption key", dek)
@@ -138,7 +157,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	auth := aes12GMAC(dak[:aes128KeyLen], dak[aes128KeyLen:aes128KeyLen+gcmNonceLen], dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
-	_, _ = p.transcript.Write(auth)
+	p.transcript.Write(auth)
 
 	// Ratchet the transcript.
 	p.ratchet()
@@ -159,10 +178,10 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	dek, dak := make([]byte, aes128KeyLen), make([]byte, aes128KeyLen+gcmNonceLen)
 
 	// Append the operation metadata to the transcript.
-	_, _ = p.transcript.Write([]byte{opAuthCrypt})
-	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
-	_, _ = p.transcript.Write([]byte(label))
-	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(plaintext)) * bitsPerByte))
+	p.transcript.Write([]byte{opAuthCrypt})
+	p.transcript.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
+	p.transcript.Write([]byte(label))
+	p.transcript.Write(tuplehash.LeftEncode(uint64(len(plaintext)) * bitsPerByte))
 
 	// Expand a data encryption key and a data authentication key from the transcript.
 	p.expand("data encryption key", dek)
@@ -172,7 +191,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	auth := aes12GMAC(dak[:aes128KeyLen], dak[aes128KeyLen:aes128KeyLen+gcmNonceLen], dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
-	_, _ = p.transcript.Write(auth)
+	p.transcript.Write(auth)
 
 	// Expand an authentication tag.
 	p.expand("authentication tag", tag)
@@ -199,10 +218,10 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	dek, dak, tagP := make([]byte, aes128KeyLen), make([]byte, aes128KeyLen+gcmNonceLen), make([]byte, TagLen)
 
 	// Append the operation metadata to the transcript.
-	_, _ = p.transcript.Write([]byte{opAuthCrypt})
-	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
-	_, _ = p.transcript.Write([]byte(label))
-	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(plaintext)) * bitsPerByte))
+	p.transcript.Write([]byte{opAuthCrypt})
+	p.transcript.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
+	p.transcript.Write([]byte(label))
+	p.transcript.Write(tuplehash.LeftEncode(uint64(len(plaintext)) * bitsPerByte))
 
 	// Expand a data encryption key and a data authentication key from the transcript.
 	p.expand("data encryption key", dek)
@@ -215,7 +234,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	auth := aes12GMAC(dak[:aes128KeyLen], dak[aes128KeyLen:aes128KeyLen+gcmNonceLen], dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
-	_, _ = p.transcript.Write(auth)
+	p.transcript.Write(auth)
 
 	// Expand a counterfactual authentication tag.
 	p.expand("authentication tag", tagP)
@@ -232,7 +251,16 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 
 // Clone returns an exact clone of the receiver Protocol.
 func (p *Protocol) Clone() Protocol {
-	return Protocol{transcript: p.transcript.Clone()}
+	state, err := p.transcript.(encoding.BinaryMarshaler).MarshalBinary() //nolint:errcheck // cannot panic
+	if err != nil {
+		panic(err)
+	}
+
+	transcript := sha512.New512_256()
+	if err := transcript.(encoding.BinaryUnmarshaler).UnmarshalBinary(state); err != nil { //nolint:errcheck // cannot panic
+		panic(err)
+	}
+	return Protocol{transcript}
 }
 
 // ratchet replaces the protocol's transcript with a ratchet operation code and a ratchet key derived from the previous
@@ -246,20 +274,37 @@ func (p *Protocol) ratchet() {
 	p.transcript.Reset()
 
 	// Append the operation data to the transcript.
-	_, _ = p.transcript.Write([]byte{opRatchet})
-	_, _ = p.transcript.Write(tuplehash.LeftEncode(uint64(len(rak)) * bitsPerByte))
-	_, _ = p.transcript.Write(rak)
+	p.transcript.Write([]byte{opRatchet})
+	p.transcript.Write(tuplehash.LeftEncode(uint64(len(rak)) * bitsPerByte))
+	p.transcript.Write(rak)
 }
 
 // expand clones the protocol's transcript, appends an expand operation code, the label length, the label, and the
 // requested output length, and fills the out slice with derived data.
 func (p *Protocol) expand(label string, out []byte) {
-	h := p.transcript.Clone()
-	_, _ = h.Write([]byte{opExpand})
-	_, _ = h.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
-	_, _ = h.Write([]byte(label))
-	_, _ = h.Write(tuplehash.RightEncode(uint64(len(out)) * bitsPerByte))
-	_, _ = h.Read(out)
+	state, err := p.transcript.(encoding.BinaryMarshaler).MarshalBinary() //nolint:errcheck // cannot panic
+	if err != nil {
+		panic(err)
+	}
+
+	h := sha512.New512_256()
+	if err := h.(encoding.BinaryUnmarshaler).UnmarshalBinary(state); err != nil { //nolint:errcheck // cannot panic
+		panic(err)
+	}
+
+	h.Write([]byte{opExpand})
+	h.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
+	h.Write([]byte(label))
+	h.Write(tuplehash.RightEncode(uint64(len(out)) * bitsPerByte))
+
+	switch {
+	case len(out) == h.Size():
+		h.Sum(out[:0])
+	case len(out) < h.Size():
+		copy(out, h.Sum(nil)[:len(out)])
+	default:
+		panic("invalid expand length")
+	}
 }
 
 func aes128CTR(key, iv, dst, src []byte) {
@@ -284,12 +329,13 @@ func aes12GMAC(key, nonce, dst, src []byte) []byte {
 }
 
 const (
-	opMix       = 0x01
-	opDerive    = 0x02
-	opCrypt     = 0x03
-	opAuthCrypt = 0x04
-	opExpand    = 0x05
-	opRatchet   = 0x06
+	opInit      = 0x01
+	opMix       = 0x02
+	opDerive    = 0x03
+	opCrypt     = 0x04
+	opAuthCrypt = 0x05
+	opExpand    = 0x06
+	opRatchet   = 0x07
 
 	ratchetKeyLen = 32
 	aes128KeyLen  = 16
