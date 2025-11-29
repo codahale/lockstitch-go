@@ -39,11 +39,15 @@ type Protocol struct {
 
 // NewProtocol creates a new Protocol with the given domain separation string.
 func NewProtocol(domain string) Protocol {
-	// Append the operation metadata to the transcript.
+	// Initialize an empty transcript.
 	transcript := sha512.New512_256()
-	transcript.Write([]byte{opInit})
-	transcript.Write(tuplehash.LeftEncode(uint64(len(domain)) * bitsPerByte))
-	transcript.Write([]byte(domain))
+
+	// Append the operation metadata to the transcript.
+	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(domain))
+	metadata[0] = opInit
+	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(domain))*bitsPerByte)...)
+	metadata = append(metadata, []byte(domain)...)
+	transcript.Write(metadata)
 
 	return Protocol{transcript}
 }
@@ -51,10 +55,12 @@ func NewProtocol(domain string) Protocol {
 // Mix ratchets the protocol's state using the given label and input.
 func (p *Protocol) Mix(label string, input []byte) {
 	// Append the operation metadata and data to the transcript.
-	p.transcript.Write([]byte{opMix})
-	p.transcript.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
-	p.transcript.Write([]byte(label))
-	p.transcript.Write(tuplehash.LeftEncode(uint64(len(input)) * bitsPerByte))
+	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
+	metadata[0] = opMix
+	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(label))*bitsPerByte)...)
+	metadata = append(metadata, []byte(label)...)
+	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(input))*bitsPerByte)...)
+	p.transcript.Write(metadata)
 	p.transcript.Write(input)
 }
 
@@ -67,14 +73,15 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	}
 
 	// Append the operation metadata to the transcript.
-	p.transcript.Write([]byte{opDerive})
-	p.transcript.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
-	p.transcript.Write([]byte(label))
-	p.transcript.Write(tuplehash.LeftEncode(uint64(n) * bitsPerByte))
+	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
+	metadata[0] = opDerive
+	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(label))*bitsPerByte)...)
+	metadata = append(metadata, []byte(label)...)
+	metadata = append(metadata, tuplehash.LeftEncode(uint64(n)*bitsPerByte)...)
+	p.transcript.Write(metadata)
 
 	// Expand a PRF key and IV.
-	keyAndIV := make([]byte, aes128KeyLen+aes.BlockSize)
-	p.expand("prf key", keyAndIV)
+	keyAndIV := p.expand("prf key", aes128KeyLen+aes.BlockSize)
 
 	// Expand n bytes of AES-128-CTR keystream for PRF output.
 	ret, prf := mem.SliceForAppend(dst, n)
@@ -95,19 +102,20 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 // To reuse plaintext's storage for the encrypted output, use plaintext[:0] as dst. Otherwise, the remaining capacity of
 // dst must not overlap plaintext.
 func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
-	// Allocate slices for the ciphertext and the keys.
+	// Allocate a slice for the ciphertext.
 	ret, ciphertext := mem.SliceForAppend(dst, len(plaintext))
-	dek, dak := make([]byte, aes128KeyLen+aes.BlockSize), make([]byte, aes128KeyLen+gcmNonceLen)
 
 	// Append the operation metadata to the transcript.
-	p.transcript.Write([]byte{opCrypt})
-	p.transcript.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
-	p.transcript.Write([]byte(label))
-	p.transcript.Write(tuplehash.LeftEncode(uint64(len(plaintext)) * bitsPerByte))
+	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
+	metadata[0] = opCrypt
+	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(label))*bitsPerByte)...)
+	metadata = append(metadata, []byte(label)...)
+	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(plaintext))*bitsPerByte)...)
+	p.transcript.Write(metadata)
 
 	// Expand a data encryption key, an IV, and a data authentication key from the transcript.
-	p.expand("data encryption key", dek)
-	p.expand("data authentication key", dak)
+	dek := p.expand("data encryption key", aes128KeyLen+aes.BlockSize)
+	dak := p.expand("data authentication key", aes128KeyLen+gcmNonceLen)
 
 	// Calculate an AES-128-GMAC authenticator of the plaintext.
 	auth := aes12GMAC(dak[:aes128KeyLen], dak[aes128KeyLen:aes128KeyLen+gcmNonceLen], dak[:0], plaintext)
@@ -129,19 +137,20 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 // ciphertext's storage for the decrypted output, use ciphertext[:0] as dst. Otherwise, the remaining capacity of dst
 // must not overlap ciphertext.
 func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
-	// Allocate slice for the plaintext and keys.
+	// Allocate a slice for the plaintext.
 	ret, plaintext := mem.SliceForAppend(dst, len(ciphertext))
-	dek, dak := make([]byte, aes128KeyLen+aes.BlockSize), make([]byte, aes128KeyLen+gcmNonceLen)
 
 	// Append the operation metadata to the transcript.
-	p.transcript.Write([]byte{opCrypt})
-	p.transcript.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
-	p.transcript.Write([]byte(label))
-	p.transcript.Write(tuplehash.LeftEncode(uint64(len(plaintext)) * bitsPerByte))
+	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
+	metadata[0] = opCrypt
+	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(label))*bitsPerByte)...)
+	metadata = append(metadata, []byte(label)...)
+	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(plaintext))*bitsPerByte)...)
+	p.transcript.Write(metadata)
 
 	// Expand a data encryption key, an IV, and a data authentication key from the transcript.
-	p.expand("data encryption key", dek)
-	p.expand("data authentication key", dak)
+	dek := p.expand("data encryption key", aes128KeyLen+aes.BlockSize)
+	dak := p.expand("data authentication key", aes128KeyLen+gcmNonceLen)
 
 	// Decrypt the ciphertext using AES-128-CTR.
 	aes128CTR(dek[:aes128KeyLen], dek[aes128KeyLen:], plaintext, ciphertext)
@@ -165,20 +174,21 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 // To reuse plaintext's storage for the encrypted output, use plaintext[:0] as dst. Otherwise, the remaining capacity of
 // dst must not overlap plaintext.
 func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
-	// Allocate a slice for the ciphertext and split it between ciphertext and tag. Also allocate slices for keys.
+	// Allocate a slice for the ciphertext and split it between ciphertext and tag.
 	ret, ciphertext := mem.SliceForAppend(dst, len(plaintext)+TagLen)
 	ciphertext, tag := ciphertext[:len(plaintext)], ciphertext[len(plaintext):]
-	dek, dak := make([]byte, aes128KeyLen), make([]byte, aes128KeyLen+gcmNonceLen)
 
 	// Append the operation metadata to the transcript.
-	p.transcript.Write([]byte{opAuthCrypt})
-	p.transcript.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
-	p.transcript.Write([]byte(label))
-	p.transcript.Write(tuplehash.LeftEncode(uint64(len(plaintext)) * bitsPerByte))
+	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
+	metadata[0] = opAuthCrypt
+	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(label))*bitsPerByte)...)
+	metadata = append(metadata, []byte(label)...)
+	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(plaintext))*bitsPerByte)...)
+	p.transcript.Write(metadata)
 
 	// Expand a data encryption key and a data authentication key from the transcript.
-	p.expand("data encryption key", dek)
-	p.expand("data authentication key", dak)
+	dek := p.expand("data encryption key", aes128KeyLen)
+	dak := p.expand("data authentication key", aes128KeyLen+gcmNonceLen)
 
 	// Calculate an AES-128-GMAC authenticator of the plaintext.
 	auth := aes12GMAC(dak[:aes128KeyLen], dak[aes128KeyLen:aes128KeyLen+gcmNonceLen], dak[:0], plaintext)
@@ -187,7 +197,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	p.transcript.Write(auth)
 
 	// Expand an authentication tag.
-	p.expand("authentication tag", tag)
+	copy(tag, p.expand("authentication tag", TagLen))
 
 	// Encrypt the plaintext using AES-128-CTR with the tag as the IV.
 	aes128CTR(dek, tag, ciphertext, plaintext)
@@ -205,20 +215,21 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 // To reuse ciphertext's storage for the decrypted output, use ciphertext[:0] as dst. Otherwise, the remaining capacity
 // of dst must not overlap ciphertext.
 func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
-	// Split the ciphertext between ciphertext and tag. Allocate slices for plaintext, keys, and tag.
+	// Split the ciphertext between ciphertext and tag. Allocate slice for plaintext.
 	ciphertext, tag := ciphertext[:len(ciphertext)-TagLen], ciphertext[len(ciphertext)-TagLen:]
 	ret, plaintext := mem.SliceForAppend(dst, len(ciphertext))
-	dek, dak, tagP := make([]byte, aes128KeyLen), make([]byte, aes128KeyLen+gcmNonceLen), make([]byte, TagLen)
 
 	// Append the operation metadata to the transcript.
-	p.transcript.Write([]byte{opAuthCrypt})
-	p.transcript.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
-	p.transcript.Write([]byte(label))
-	p.transcript.Write(tuplehash.LeftEncode(uint64(len(plaintext)) * bitsPerByte))
+	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
+	metadata[0] = opAuthCrypt
+	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(label))*bitsPerByte)...)
+	metadata = append(metadata, []byte(label)...)
+	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(plaintext))*bitsPerByte)...)
+	p.transcript.Write(metadata)
 
 	// Expand a data encryption key and a data authentication key from the transcript.
-	p.expand("data encryption key", dek)
-	p.expand("data authentication key", dak)
+	dek := p.expand("data encryption key", aes128KeyLen)
+	dak := p.expand("data authentication key", aes128KeyLen+gcmNonceLen)
 
 	// Decrypt the ciphertext using AES-128-CTR with the tag as the IV.
 	aes128CTR(dek, tag, plaintext, ciphertext)
@@ -230,7 +241,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	p.transcript.Write(auth)
 
 	// Expand a counterfactual authentication tag.
-	p.expand("authentication tag", tagP)
+	tagP := p.expand("authentication tag", TagLen)
 
 	// Ratchet the transcript.
 	p.ratchet()
@@ -268,42 +279,42 @@ func (p *Protocol) MarshalBinary() (data []byte, err error) {
 // protocol transcript.
 func (p *Protocol) ratchet() {
 	// Expand a ratchet key.
-	rak := make([]byte, ratchetKeyLen)
-	p.expand("ratchet key", rak)
+	rak := p.expand("ratchet key", ratchetKeyLen)
 
 	// Clear the transcript.
 	p.transcript.Reset()
 
 	// Append the operation metadata and data to the transcript.
-	p.transcript.Write([]byte{opRatchet})
-	p.transcript.Write(tuplehash.LeftEncode(uint64(len(rak)) * bitsPerByte))
+	metadata := make([]byte, 1, 1+tuplehash.MaxLen)
+	metadata[0] = opRatchet
+	metadata = append(metadata, tuplehash.LeftEncode(ratchetKeyLen*bitsPerByte)...)
+	p.transcript.Write(metadata)
 	p.transcript.Write(rak)
 }
 
 // expand clones the protocol's transcript, appends an expand operation code, the label length, the label, and the
-// requested output length, and fills the out slice with derived data.
-func (p *Protocol) expand(label string, out []byte) {
+// requested output length, and returns n (<=32) bytes of derived output.
+func (p *Protocol) expand(label string, n int) []byte {
 	// Create a copy of the transcript.
 	h, err := p.transcript.(hash.Cloner).Clone() //nolint:errcheck // cannot panic
 	if err != nil {
 		panic(err)
 	}
 
-	// Append the operation metadata and data to the transcript copy.
-	_, _ = h.Write([]byte{opExpand})
-	_, _ = h.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
-	_, _ = h.Write([]byte(label))
-	_, _ = h.Write(tuplehash.RightEncode(uint64(len(out)) * bitsPerByte))
-
-	// Generate up to 32 bytes of output.
-	switch {
-	case len(out) == h.Size():
-		h.Sum(out[:0])
-	case len(out) < h.Size():
-		copy(out, h.Sum(nil)[:len(out)])
-	default:
+	if n > h.Size() {
 		panic("invalid expand length")
 	}
+
+	// Append the operation metadata and data to the transcript copy.
+	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
+	metadata[0] = opExpand
+	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(label))*bitsPerByte)...)
+	metadata = append(metadata, []byte(label)...)
+	metadata = append(metadata, tuplehash.RightEncode(uint64(n)*bitsPerByte)...) //nolint:gosec // n <= 32
+	_, _ = h.Write(metadata)
+
+	// Generate up to 32 bytes of output.
+	return h.Sum(nil)[:n]
 }
 
 var (

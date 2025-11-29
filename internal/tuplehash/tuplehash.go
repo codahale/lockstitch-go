@@ -8,10 +8,13 @@ import (
 	"math/bits"
 )
 
+// MaxLen is the length, in bytes, of the largest encoded integer.
+const MaxLen = 9
+
 // LeftEncode encodes an integer value using NIST SP 800-185's left_encode and appends it to dst.
 func LeftEncode(value uint64) []byte {
 	n := 8 - (bits.LeadingZeros64(value|1) / 8)
-	var buf [9]byte
+	var buf [MaxLen]byte
 	binary.BigEndian.PutUint64(buf[1:], value<<((8-n)*8))
 	buf[0] = byte(n)
 	return buf[:n+1]
@@ -20,7 +23,7 @@ func LeftEncode(value uint64) []byte {
 // RightEncode encodes an integer value using NIST SP 800-185's right_encode and appends is to dst.
 func RightEncode(value uint64) []byte {
 	n := 8 - (bits.LeadingZeros64(value|1) / 8)
-	var buf [9]byte
+	var buf [MaxLen]byte
 	binary.BigEndian.PutUint64(buf[:8], value<<((8-n)*8))
 	buf[n] = byte(n)
 	return buf[:n+1]
