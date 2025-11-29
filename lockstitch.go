@@ -284,13 +284,16 @@ func (p *Protocol) ratchet() {
 // requested output length, and fills the out slice with derived data.
 func (p *Protocol) expand(label string, out []byte) {
 	// Create a copy of the transcript.
-	h := p.Clone().transcript
+	h, err := p.transcript.(hash.Cloner).Clone() //nolint:errcheck // cannot panic
+	if err != nil {
+		panic(err)
+	}
 
 	// Append the operation metadata and data to the transcript copy.
-	h.Write([]byte{opExpand})
-	h.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
-	h.Write([]byte(label))
-	h.Write(tuplehash.RightEncode(uint64(len(out)) * bitsPerByte))
+	_, _ = h.Write([]byte{opExpand})
+	_, _ = h.Write(tuplehash.LeftEncode(uint64(len(label)) * bitsPerByte))
+	_, _ = h.Write([]byte(label))
+	_, _ = h.Write(tuplehash.RightEncode(uint64(len(out)) * bitsPerByte))
 
 	// Generate up to 32 bytes of output.
 	switch {
