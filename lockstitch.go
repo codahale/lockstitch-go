@@ -14,6 +14,7 @@ import (
 	"crypto/cipher"
 	"crypto/sha512"
 	"crypto/subtle"
+	"encoding"
 	"errors"
 	"hash"
 
@@ -251,6 +252,18 @@ func (p *Protocol) Clone() Protocol {
 	return Protocol{transcript}
 }
 
+func (p *Protocol) AppendBinary(b []byte) ([]byte, error) {
+	return p.transcript.(encoding.BinaryAppender).AppendBinary(b) //nolint:errcheck // cannot panic
+}
+
+func (p *Protocol) UnmarshalBinary(data []byte) error {
+	return p.transcript.(encoding.BinaryUnmarshaler).UnmarshalBinary(data) //nolint:errcheck // cannot panic
+}
+
+func (p *Protocol) MarshalBinary() (data []byte, err error) {
+	return p.transcript.(encoding.BinaryMarshaler).MarshalBinary() //nolint:errcheck // cannot panic
+}
+
 // ratchet replaces the protocol's transcript with a ratchet operation code and a ratchet key derived from the previous
 // protocol transcript.
 func (p *Protocol) ratchet() {
@@ -289,6 +302,12 @@ func (p *Protocol) expand(label string, out []byte) {
 		panic("invalid expand length")
 	}
 }
+
+var (
+	_ encoding.BinaryMarshaler   = (*Protocol)(nil)
+	_ encoding.BinaryUnmarshaler = (*Protocol)(nil)
+	_ encoding.BinaryAppender    = (*Protocol)(nil)
+)
 
 func aes128CTR(key, iv, dst, src []byte) {
 	block, err := aes.NewCipher(key)

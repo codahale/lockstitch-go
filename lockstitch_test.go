@@ -20,6 +20,44 @@ func TestProtocol_Clone(t *testing.T) {
 	}
 }
 
+func TestProtocol_MarshalBinary(t *testing.T) {
+	p1 := lockstitch.NewProtocol("example")
+	p1.Mix("a thing", []byte("another thing"))
+
+	state, err := p1.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p2 := lockstitch.NewProtocol("counter-example")
+	if err := p2.UnmarshalBinary(state); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := p2.Derive("third", nil, 8), p1.Derive("third", nil, 8); !bytes.Equal(got, want) {
+		t.Errorf("Derive('third') = %x, want = %x", got, want)
+	}
+}
+
+func TestProtocol_AppendBinary(t *testing.T) {
+	p1 := lockstitch.NewProtocol("example")
+	p1.Mix("a thing", []byte("another thing"))
+
+	got, err := p1.AppendBinary(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want, err := p1.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(got, want) {
+		t.Errorf("AppendBinary = %x, want %x", got, want)
+	}
+}
+
 func TestDeriveZeroOutputs(t *testing.T) {
 	t.Parallel()
 
