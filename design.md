@@ -66,7 +66,7 @@ constant operation code:
 
 ```text
 function Mix(transcript, label, input):
-  transcript = transcript || 0x01 || left_encode(|label|) || label || left_encode(|input|) || input
+  transcript = transcript || 0x02 || left_encode(|label|) || label || left_encode(|input|) || input
   return transcript
 ```
 
@@ -85,7 +85,7 @@ derived output:
 
 ```text
 function expand(transcript, label, n):
-  hash = SHA_512_256(transcript || 0x05 || left_encode(|label|) || label || right_encode(n))
+  hash = SHA_512_256(transcript || 0x06 || left_encode(|label|) || label || right_encode(n))
   return hash[:n]
 ```
 
@@ -99,7 +99,7 @@ be modeled as a random oracle relative to the transcript, label, and output leng
 ```text
 function ratchet(transcript):
   rak = expand(transcript, "ratchet key", 256)
-  return 0x06 || left_encode(|rak|) || rak
+  return 0x07 || left_encode(|rak|) || rak
 ```
 
 `ratchet` expands a 256-bit ratchet key from the protocol's transcript, then replaces the transcript with an operation
@@ -108,7 +108,7 @@ forward secrecy.
 
 ```text
 function Derive(transcript, label, n):
-  transcript = transcript || 0x02 || left_encode(|label|) || label || left_encode(n)
+  transcript = transcript || 0x03 || left_encode(|label|) || label || left_encode(n)
   kn = expand(transcript, "prf key", 32)
   prf = AES_128_CTR(kn[:16], kn[16:], [0x00; n])
   transcript = ratchet(transcript)
@@ -156,7 +156,7 @@ extracted from the protocol's transcript, the label, and the output length.
 
 ```text
 function Encrypt(transcript, label, plaintext):
-  transcript = transcript || 0x03 || left_encode(|label|) || label || left_encode(|plaintext|)
+  transcript = transcript || 0x04 || left_encode(|label|) || label || left_encode(|plaintext|)
   dek || iv = expand(transcript, "data encryption key", 128+128)
   dak = expand(transcript, "data authentication key", 128+96)
   ciphertext = AES_128_CTR(dek, iv, plaintext)
@@ -166,7 +166,7 @@ function Encrypt(transcript, label, plaintext):
   return (transcript, ciphertext)
   
 function Decrypt((transcript, S), label, ciphertext):
-  transcript = transcript || 0x03 || left_encode(|label|) || label || left_encode(|ciphertext|)
+  transcript = transcript || 0x04 || left_encode(|label|) || label || left_encode(|ciphertext|)
   dek || iv = expand(transcript, "data encryption key", 128+128)
   dak = expand(transcript, "data authentication key", 128+96)
   plaintext = AES_128_CTR(dek, iv, ciphertext)
@@ -205,7 +205,7 @@ authentication tag. The `Seal` operation verifies the tag, returning an error if
 
 ```text
 function Seal(transcript, label, plaintext):
-  transcript = transcript || 0x04 || left_encode(|label|) || label || left_encode(|plaintext|)
+  transcript = transcript || 0x05 || left_encode(|label|) || label || left_encode(|plaintext|)
   dek = expand(transcript, "data encryption key", 128)
   dak = expand(transcript, "data authentication key", 128+96)
   auth = AES_128_GMAC(dak[:16], dak[16:], plaintext)
@@ -216,7 +216,7 @@ function Seal(transcript, label, plaintext):
   return (transcript, ciphertext || tag)
  
 function Open(transcript, label, ciphertext || tag):
-  transcript = transcript || 0x04 || left_encode(|label|) || label || left_encode(|ciphertext|)
+  transcript = transcript || 0x05 || left_encode(|label|) || label || left_encode(|ciphertext|)
   dek = expand(transcript, "data encryption key", 128)
   dak = expand(transcript, "data authentication key", 128+96)
   plaintext = AES_128_CTR(dk, tag, ciphertext)
