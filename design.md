@@ -109,8 +109,8 @@ forward secrecy.
 ```text
 function Derive(transcript, label, n):
   transcript = transcript || 0x03 || left_encode(|label|) || label || left_encode(n)
-  kn = expand(transcript, "prf key", 32)
-  prf = AES_128_CTR(kn[:16], kn[16:], [0x00; n])
+  kn = expand(transcript, "prf key", 256)
+  prf = AES_128_CTR(kn[:128], kn[128:], [0x00; n])
   transcript = ratchet(transcript)
   return (transcript, prf)
 ```
@@ -160,7 +160,7 @@ function Encrypt(transcript, label, plaintext):
   dek || iv = expand(transcript, "data encryption key", 128+128)
   dak = expand(transcript, "data authentication key", 128+96)
   ciphertext = AES_128_CTR(dek, iv, plaintext)
-  auth = AES_128_GMAC(dak[:16], dak[16:], plaintext)
+  auth = AES_128_GMAC(dak[:128], dak[128:], plaintext)
   transcript = transcript || auth 
   transcript = ratchet(transcript)
   return (transcript, ciphertext)
@@ -170,7 +170,7 @@ function Decrypt((transcript, S), label, ciphertext):
   dek || iv = expand(transcript, "data encryption key", 128+128)
   dak = expand(transcript, "data authentication key", 128+96)
   plaintext = AES_128_CTR(dek, iv, ciphertext)
-  auth = AES_128_GMAC(dak[:16], dak[16:], plaintext)
+  auth = AES_128_GMAC(dak[:128], dak[128:], plaintext)
   transcript = transcript || auth 
   transcript = ratchet(transcript)
   return (transcript, plaintext)
@@ -208,7 +208,7 @@ function Seal(transcript, label, plaintext):
   transcript = transcript || 0x05 || left_encode(|label|) || label || left_encode(|plaintext|)
   dek = expand(transcript, "data encryption key", 128)
   dak = expand(transcript, "data authentication key", 128+96)
-  auth = AES_128_GMAC(dak[:16], dak[16:], plaintext)
+  auth = AES_128_GMAC(dak[:128], dak[128:], plaintext)
   transcript = transcript || auth
   tag = expand(transcript, "authentication tag", 128)
   ciphertext = AES_128_CTR(dek, tag, plaintext)
@@ -220,7 +220,7 @@ function Open(transcript, label, ciphertext || tag):
   dek = expand(transcript, "data encryption key", 128)
   dak = expand(transcript, "data authentication key", 128+96)
   plaintext = AES_128_CTR(dk, tag, ciphertext)
-  auth = AES_128_GMAC(dak[:16], dak[16:], plaintext)
+  auth = AES_128_GMAC(dak[:128], dak[128:], plaintext)
   transcript = transcript || auth
   tag' = expand(transcript, "authentication tag", 128)
   transcript = ratchet(transcript)
