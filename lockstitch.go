@@ -1,12 +1,12 @@
 // Package lockstitch provides an incremental, stateful cryptographic primitive for symmetric-key cryptographic
 // operations (e.g., hashing, encryption, message authentication codes, and authenticated encryption) in complex
 // protocols. Inspired by TupleHash, STROBE, Noise Protocol's stateful objects, Merlin transcripts, and Xoodyak's
-// Cyclist mode, Lockstitch uses [SHA-512/256], [AES-128], and [GMAC] to provide 10+ Gb/sec performance on modern
+// Cyclist mode, Lockstitch uses [SHA-384], [AES-256], and [GMAC] to provide 10+ Gb/sec performance on modern
 // processors at a 128-bit security level.
 //
-// [SHA-512/256]: https://doi.org/10.6028/NIST.FIPS.180-4
+// [SHA-384]: https://doi.org/10.6028/NIST.FIPS.180-4
 // [GMAC]: https://doi.org/10.6028/NIST.SP.800-38D
-// [AES-128]: https://doi.org/10.6028/NIST.FIPS.197-upd1
+// [AES-256]: https://doi.org/10.6028/NIST.FIPS.197-upd1
 package lockstitch
 
 import (
@@ -40,7 +40,7 @@ type Protocol struct {
 // NewProtocol creates a new Protocol with the given domain separation string.
 func NewProtocol(domain string) Protocol {
 	// Initialize an empty transcript.
-	transcript := sha512.New512_256()
+	transcript := sha512.New384()
 
 	// Append the operation metadata to the transcript.
 	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(domain))
@@ -81,14 +81,14 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	p.transcript.Write(metadata)
 
 	// Expand a PRF key and IV.
-	keyAndIV := p.expand("prf key", aes128KeyLen+aes.BlockSize)
+	keyAndIV := p.expand("prf key", aes256KeyLen+aes.BlockSize)
 
-	// Expand n bytes of AES-128-CTR keystream for PRF output.
+	// Expand n bytes of AES-256-CTR keystream for PRF output.
 	ret, prf := mem.SliceForAppend(dst, n)
 	for i := range prf {
 		prf[i] = 0 // There's no way to get just the keystream from stdlib's CTR mode, so we ensure the input is zeroed.
 	}
-	aes128CTR(keyAndIV[:aes128KeyLen], keyAndIV[aes128KeyLen:], prf, prf)
+	aesCTR(keyAndIV[:aes256KeyLen], keyAndIV[aes256KeyLen:], prf, prf)
 
 	// Ratchet the transcript.
 	p.ratchet()
@@ -114,17 +114,17 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	p.transcript.Write(metadata)
 
 	// Expand a data encryption key, an IV, and a data authentication key from the transcript.
-	dek := p.expand("data encryption key", aes128KeyLen+aes.BlockSize)
-	dak := p.expand("data authentication key", aes128KeyLen+gcmNonceLen)
+	dek := p.expand("data encryption key", aes256KeyLen+aes.BlockSize)
+	dak := p.expand("data authentication key", aes256KeyLen+gcmNonceLen)
 
-	// Calculate an AES-128-GMAC authenticator of the plaintext.
-	auth := aes12GMAC(dak[:aes128KeyLen], dak[aes128KeyLen:aes128KeyLen+gcmNonceLen], dak[:0], plaintext)
+	// Calculate an AES-256-GMAC authenticator of the plaintext.
+	auth := aesGMAC(dak[:aes256KeyLen], dak[aes256KeyLen:aes256KeyLen+gcmNonceLen], dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
 
-	// Encrypt the plaintext using AES-128-CTR.
-	aes128CTR(dek[:aes128KeyLen], dek[aes128KeyLen:], ciphertext, plaintext)
+	// Encrypt the plaintext using AES-256-CTR.
+	aesCTR(dek[:aes256KeyLen], dek[aes256KeyLen:], ciphertext, plaintext)
 
 	// Ratchet the transcript.
 	p.ratchet()
@@ -149,14 +149,14 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	p.transcript.Write(metadata)
 
 	// Expand a data encryption key, an IV, and a data authentication key from the transcript.
-	dek := p.expand("data encryption key", aes128KeyLen+aes.BlockSize)
-	dak := p.expand("data authentication key", aes128KeyLen+gcmNonceLen)
+	dek := p.expand("data encryption key", aes256KeyLen+aes.BlockSize)
+	dak := p.expand("data authentication key", aes256KeyLen+gcmNonceLen)
 
-	// Decrypt the ciphertext using AES-128-CTR.
-	aes128CTR(dek[:aes128KeyLen], dek[aes128KeyLen:], plaintext, ciphertext)
+	// Decrypt the ciphertext using AES-256-CTR.
+	aesCTR(dek[:aes256KeyLen], dek[aes256KeyLen:], plaintext, ciphertext)
 
-	// Calculate an AES-128-GMAC authenticator of the plaintext.
-	auth := aes12GMAC(dak[:aes128KeyLen], dak[aes128KeyLen:aes128KeyLen+gcmNonceLen], dak[:0], plaintext)
+	// Calculate an AES-256-GMAC authenticator of the plaintext.
+	auth := aesGMAC(dak[:aes256KeyLen], dak[aes256KeyLen:aes256KeyLen+gcmNonceLen], dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
@@ -187,11 +187,11 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	p.transcript.Write(metadata)
 
 	// Expand a data encryption key and a data authentication key from the transcript.
-	dek := p.expand("data encryption key", aes128KeyLen)
-	dak := p.expand("data authentication key", aes128KeyLen+gcmNonceLen)
+	dek := p.expand("data encryption key", aes256KeyLen)
+	dak := p.expand("data authentication key", aes256KeyLen+gcmNonceLen)
 
-	// Calculate an AES-128-GMAC authenticator of the plaintext.
-	auth := aes12GMAC(dak[:aes128KeyLen], dak[aes128KeyLen:aes128KeyLen+gcmNonceLen], dak[:0], plaintext)
+	// Calculate an AES-256-GMAC authenticator of the plaintext.
+	auth := aesGMAC(dak[:aes256KeyLen], dak[aes256KeyLen:aes256KeyLen+gcmNonceLen], dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
@@ -199,8 +199,8 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	// Expand an authentication tag.
 	copy(tag, p.expand("authentication tag", TagLen))
 
-	// Encrypt the plaintext using AES-128-CTR with the tag as the IV.
-	aes128CTR(dek, tag, ciphertext, plaintext)
+	// Encrypt the plaintext using AES-256-CTR with the tag as the IV.
+	aesCTR(dek, tag, ciphertext, plaintext)
 
 	// Ratchet the transcript.
 	p.ratchet()
@@ -228,14 +228,14 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	p.transcript.Write(metadata)
 
 	// Expand a data encryption key and a data authentication key from the transcript.
-	dek := p.expand("data encryption key", aes128KeyLen)
-	dak := p.expand("data authentication key", aes128KeyLen+gcmNonceLen)
+	dek := p.expand("data encryption key", aes256KeyLen)
+	dak := p.expand("data authentication key", aes256KeyLen+gcmNonceLen)
 
-	// Decrypt the ciphertext using AES-128-CTR with the tag as the IV.
-	aes128CTR(dek, tag, plaintext, ciphertext)
+	// Decrypt the ciphertext using AES-256-CTR with the tag as the IV.
+	aesCTR(dek, tag, plaintext, ciphertext)
 
-	// Calculate an AES-128-GMAC authenticator of the plaintext.
-	auth := aes12GMAC(dak[:aes128KeyLen], dak[aes128KeyLen:aes128KeyLen+gcmNonceLen], dak[:0], plaintext)
+	// Calculate an AES-256-GMAC authenticator of the plaintext.
+	auth := aesGMAC(dak[:aes256KeyLen], dak[aes256KeyLen:aes256KeyLen+gcmNonceLen], dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
@@ -279,7 +279,7 @@ func (p *Protocol) MarshalBinary() (data []byte, err error) {
 // protocol transcript.
 func (p *Protocol) ratchet() {
 	// Expand a ratchet key.
-	rak := p.expand("ratchet key", ratchetKeyLen)
+	rak := p.expand("ratchet key", p.transcript.Size())
 
 	// Clear the transcript.
 	p.transcript.Reset()
@@ -287,7 +287,7 @@ func (p *Protocol) ratchet() {
 	// Append the operation metadata and data to the transcript.
 	metadata := make([]byte, 1, 1+tuplehash.MaxLen)
 	metadata[0] = opRatchet
-	metadata = append(metadata, tuplehash.LeftEncode(ratchetKeyLen*bitsPerByte)...)
+	metadata = append(metadata, tuplehash.LeftEncode(uint64(p.transcript.Size())*bitsPerByte)...) //nolint:gosec // n << 2^64
 	p.transcript.Write(metadata)
 	p.transcript.Write(rak)
 }
@@ -323,7 +323,7 @@ var (
 	_ encoding.BinaryAppender    = (*Protocol)(nil)
 )
 
-func aes128CTR(key, iv, dst, src []byte) {
+func aesCTR(key, iv, dst, src []byte) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		panic(err)
@@ -332,7 +332,7 @@ func aes128CTR(key, iv, dst, src []byte) {
 	cipher.NewCTR(block, iv).XORKeyStream(dst, src)
 }
 
-func aes12GMAC(key, nonce, dst, src []byte) []byte {
+func aesGMAC(key, nonce, dst, src []byte) []byte {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		panic(err)
@@ -355,8 +355,7 @@ const (
 	opExpand    = 0x06
 	opRatchet   = 0x07
 
-	ratchetKeyLen = 32
-	aes128KeyLen  = 16
-	gcmNonceLen   = 12
-	bitsPerByte   = 8
+	aes256KeyLen = 32
+	gcmNonceLen  = 12
+	bitsPerByte  = 8
 )
