@@ -242,13 +242,13 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 }
 
 // Clone returns an exact clone of the receiver Protocol.
-func (p *Protocol) Clone() (*Protocol, error) {
+func (p *Protocol) Clone() Protocol {
 	transcript, err := p.transcript.(hash.Cloner).Clone() //nolint:errcheck // cannot panic
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 
-	return &Protocol{transcript}, nil
+	return Protocol{transcript}
 }
 
 // ratchet replaces the protocol's transcript with a ratchet operation code and a ratchet key derived from the previous
@@ -271,11 +271,7 @@ func (p *Protocol) ratchet() {
 // requested output length, and fills the out slice with derived data.
 func (p *Protocol) expand(label string, out []byte) {
 	// Create a copy of the transcript.
-	clone, err := p.Clone()
-	if err != nil {
-		panic(err)
-	}
-	h := clone.transcript
+	h := p.Clone().transcript
 
 	// Append the operation metadata and data to the transcript copy.
 	h.Write([]byte{opExpand})
