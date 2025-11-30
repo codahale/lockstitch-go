@@ -36,7 +36,7 @@ BenchmarkAEAD/16KiB-4             225962              5439 ns/op        3015.21 
 BenchmarkAEAD/1MiB-4                5646            214257 ns/op        4894.08 MB/s        3864 B/op         23 allocs/op
 ```
 
-## `arm64` (Apple MacBook Pro `Mac16,7` M4 Pro, macOS 26.1, Go 1.25.4)
+## `arm64` (Apple MacBook Pro `Mac16,7`, M4 Pro, macOS 26.1, Go 1.25.4)
 
 ```text
 goos: darwin
