@@ -3,10 +3,10 @@
 Lockstitch is an incremental, stateful cryptographic primitive for symmetric-key cryptographic operations (e.g.,
 hashing, encryption, message authentication codes, and authenticated encryption) in complex protocols. Inspired by
 TupleHash, STROBE, Noise Protocol's stateful objects, Merlin transcripts, and Xoodyak's Cyclist mode, Lockstitch
-uses [SHA-384], [AES-256], and [GMAC] to provide 10+ Gb/sec performance on modern processors at a 128-bit security
+uses [SHA-512/256], [AES-256], and [GMAC] to provide 10+ Gb/sec performance on modern processors at a 128-bit security
 level.
 
-[SHA-384]: https://doi.org/10.6028/NIST.FIPS.180-4
+[SHA-512/256]: https://doi.org/10.6028/NIST.FIPS.180-4
 
 [AES-256]: https://doi.org/10.6028/NIST.FIPS.197-upd1
 
@@ -80,17 +80,17 @@ securely reduce it to an input with a known length.
 
 A `Derive` operation accepts a label and an output length and returns pseudorandom data derived from the protocol's
 state, the label, and the output length. This requires two helper functions: `expand`, which hashes the protocol's
-transcript with SHA-384 and generates a derived value, and `ratchet`, which replaces the protocol's transcript with
+transcript with SHA-512/256 and generates a derived value, and `ratchet`, which replaces the protocol's transcript with
 derived output:
 
 ```text
 function expand(transcript, label, n):
-  hash = SHA_384(transcript || 0x06 || left_encode(|label|) || label || right_encode(n))
+  hash = SHA_512_256(transcript || 0x06 || left_encode(|label|) || label || right_encode(n))
   return hash[:n]
 ```
 
 `expand` appends an operation code, label length, label, and output length to a copy of the protocol's transcript,
-hashes it with SHA-384, and returns the requested output of up to 384 bits. SHA-384 truncates the output of a
+hashes it with SHA-512/256, and returns the requested output of up to 256 bits. SHA-512/256 truncates the output of a
 full SHA-512 hash (albeit with a different initial state value), which makes it an instantiation of the [AMAC] PRF
 construction. Consequently, each `expand` call can be modeled as a random oracle relative to the transcript, label, and
 output length.
@@ -99,34 +99,34 @@ output length.
 
 ```text
 function ratchet(transcript):
-  rak = expand(transcript, "ratchet key", 384)
+  rak = expand(transcript, "ratchet key", 256)
   return 0x07 || left_encode(|rak|) || rak
 ```
 
-`ratchet` expands a 384-bit ratchet key from the protocol's transcript, then replaces the transcript with an operation
+`ratchet` expands a 256-bit ratchet key from the protocol's transcript, then replaces the transcript with an operation
 code, the ratchet key length, and the ratchet key. By replacing the transcript with derived output, `Derive` ensures
 forward secrecy.
 
 ```text
 function Derive(transcript, label, n):
   transcript = transcript || 0x03 || left_encode(|label|) || label || left_encode(n)
-  kn = expand(transcript, "prf key", 256+128)
-  prf = AES_256_CTR(kn[:256], kn[256:], [0x00; n])
+  prf_key = expand(transcript, "prf key", 256)
+  prf = AES_256_CTR(prf_key, [0x00; 16], [0x00; n])
   transcript = ratchet(transcript)
   return (transcript, prf)
 ```
 
 `Derive` appends an operation code, the label length in bits, the label, and the requested output length in bits to the
-transcript. It expands the transcript into a AES-256-CTR key and IV, generates `n` bits of PRF output from the
-AES-256-CTR keystream, and finally ratchets the transcript.
+transcript. It expands the transcript into a AES-256-CTR key, generates `n` bits of PRF output from the AES-256-CTR
+keystream, and finally ratchets the transcript.
 
 **IMPORTANT:** A `Derive` operation's output depends on both the label and the output length.
 
 #### KDF Security
 
 A sequence of `Mix` operations followed by a `Derive` operation (or other operations which produce output via `expand`)
-is effectively using SHA-384 to hash an input string constructed using a recoverable encoding (i.e., one that can be
-unambiguously parsed left-to-right) and which includes the derived output length. Given SHA-384's
+is effectively using SHA-512/256 to hash an input string constructed using a recoverable encoding (i.e., one that can be
+unambiguously parsed left-to-right) and which includes the derived output length. Given SHA-512/256's
 [security claim][SP 800-107] of being indistinguishable from a random oracle up to a computational complexity of ~196
 bits, this construction maps directly to [Backendal et al.'s RO-KDF construction][n-KDFs] and is a KDF-secure XOF-n-KDF.
 
@@ -157,30 +157,30 @@ extracted from the protocol's transcript, the label, and the output length.
 ```text
 function Encrypt(transcript, label, plaintext):
   transcript = transcript || 0x04 || left_encode(|label|) || label || left_encode(|plaintext|)
-  dek || iv = expand(transcript, "data encryption key", 256+128)
-  dak = expand(transcript, "data authentication key", 256+96)
-  ciphertext = AES_256_CTR(dek, iv, plaintext)
-  auth = AES_256_GMAC(dak[:256], dak[256:], plaintext)
+  dek = expand(transcript, "data encryption key", 256)
+  dak = expand(transcript, "data authentication key", 256)
+  ciphertext = AES_256_CTR(dek, [0x00; 16], plaintext)
+  auth = AES_256_GMAC(dak, plaintext)
   transcript = transcript || auth 
   transcript = ratchet(transcript)
   return (transcript, ciphertext)
   
 function Decrypt((transcript, S), label, ciphertext):
   transcript = transcript || 0x04 || left_encode(|label|) || label || left_encode(|ciphertext|)
-  dek || iv = expand(transcript, "data encryption key", 256+128)
-  dak = expand(transcript, "data authentication key", 256+96)
-  plaintext = AES_256_CTR(dek, iv, ciphertext)
-  auth = AES_256_GMAC(dak[:256], dak[256:], plaintext)
+  dek = expand(transcript, "data encryption key", 256)
+  dak = expand(transcript, "data authentication key", 256)
+  plaintext = AES_256_CTR(dek, [0x00; 16], ciphertext)
+  auth = AES_256_GMAC(dak, plaintext)
   transcript = transcript || auth 
   transcript = ratchet(transcript)
   return (transcript, plaintext)
 ```
 
 `Encrypt` appends an operation code, the label length in bits, the label, and the plaintext length in bits to the
-transcript. It then hashes the transcript with SHA-384 and derives a 256-bit data encryption key, a 128-bit IV, a
-256-bit data authentication key, and a 128-bit nonce. The data encryption key and IV are used to encrypt the plaintext
-with AES-256-CTR. The data authentication key and nonce are used to calculate an AES-256-GMAC authenticator of the
-plaintext. Finally, the GMAC authenticator is appended to the transcript and the transcript is ratcheted.
+transcript. It then hashes the transcript with SHA-512/256 and derives a 256-bit data encryption key and a 256-bit data
+authentication key. The data encryption key is used to encrypt the plaintext with AES-256-CTR. The data authentication
+key and nonce are used to calculate an AES-256-GMAC authenticator of the plaintext. Finally, the GMAC authenticator is
+appended to the transcript and the transcript is ratcheted.
 
 Two points bear mentioning about `Encrypt` and `Decrypt`:
 
@@ -207,8 +207,8 @@ authentication tag. The `Seal` operation verifies the tag, returning an error if
 function Seal(transcript, label, plaintext):
   transcript = transcript || 0x05 || left_encode(|label|) || label || left_encode(|plaintext|)
   dek = expand(transcript, "data encryption key", 256)
-  dak = expand(transcript, "data authentication key", 256+96)
-  auth = AES_256_GMAC(dak[:256], dak[256:], plaintext)
+  dak = expand(transcript, "data authentication key", 256)
+  auth = AES_256_GMAC(dak, plaintext)
   transcript = transcript || auth
   tag = expand(transcript, "authentication tag", 128)
   ciphertext = AES_256_CTR(dek, tag, plaintext)
@@ -218,9 +218,9 @@ function Seal(transcript, label, plaintext):
 function Open(transcript, label, ciphertext || tag):
   transcript = transcript || 0x05 || left_encode(|label|) || label || left_encode(|ciphertext|)
   dek = expand(transcript, "data encryption key", 256)
-  dak = expand(transcript, "data authentication key", 256+96)
+  dak = expand(transcript, "data authentication key", 256)
   plaintext = AES_256_CTR(dk, tag, ciphertext)
-  auth = AES_256_GMAC(dak[:256], dak[256:], plaintext)
+  auth = AES_256_GMAC(dak, plaintext)
   transcript = transcript || auth
   tag' = expand(transcript, "authentication tag", 128)
   transcript = ratchet(transcript)
@@ -229,10 +229,10 @@ function Open(transcript, label, ciphertext || tag):
   return (transcript, plaintext)
 ```
 
-This uses the [synthetic IV construction][SIV] to provide nonce-misuse resistant encryption, with SHA-384 and
+This uses the [synthetic IV construction][SIV] to provide nonce-misuse resistant encryption, with SHA-512/256 and
 AES-256-GMAC serving as the PRF used to derive the IV from the plaintext. Because GMAC is eUF-CMA unforgeable and
-SHA-384 is collision-resistant, this construction (unlike e.g., [AES-SIV][AES-SIV]) is key-committing, and because the
-key is derived from the protocol state (again with SHA-384), this construction is therefore context-committing.
+SHA-512/256 is collision-resistant, this construction (unlike e.g., [AES-SIV][AES-SIV]) is key-committing, and because
+the key is derived from the protocol state (again with SHA-512/256), this construction is therefore context-committing.
 
 [SIV]: https://www.iacr.org/archive/eurocrypt2006/40040377/40040377.pdf
 
@@ -258,7 +258,7 @@ function MessageDigest(message):
   return digest
 ```
 
-This construction is indistinguishable from a random oracle if SHA-384 is indistinguishable from a random oracle and
+This construction is indistinguishable from a random oracle if SHA-512/256 is indistinguishable from a random oracle and
 AES-256-CTR is PRF secure.
 
 ### Message Authentication Codes
@@ -277,7 +277,8 @@ function MAC(key, message):
 The use of labels and the encoding of [`Mix` inputs](#mix) ensures that the key and the message will never overlap, even
 if their lengths vary.
 
-This construction is sUF-CMA secure if SHA-384 is indistinguishable from a random oracle and AES-256-CTR is PRF secure.
+This construction is sUF-CMA secure if SHA-512/256 is indistinguishable from a random oracle and AES-256-CTR is PRF
+secure.
 
 ### Stream Ciphers
 
@@ -302,7 +303,7 @@ function StreamDecrypt(key, nonce, ciphertext):
 This construction is IND-CPA-secure under the following assumptions:
 
 1. AES-256-CTR is IND-CPA-secure when used with a unique IV.
-2. SHA-384 is indistinguishable from a random oracle.
+2. SHA-512/256 is indistinguishable from a random oracle.
 3. AES-256-GMAC is eUF-CMA secure.
 4. At least one of the inputs to the protocol is a nonce (i.e., not used for multiple messages).
 
@@ -341,7 +342,7 @@ function AEADOpen(key, nonce, ad, ciphertext || tag):
 This construction is IND-CCA2-secure (i.e., both IND-CPA and INT-CTXT) under the following assumptions:
 
 1. AES-256-CTR is IND-CPA-secure when used with a unique IV.
-2. SHA-384 is indistinguishable from a random oracle.
+2. SHA-512/256 is indistinguishable from a random oracle.
 3. AES-256-GMAC is eUF-CMA secure.
 4. At least one of the inputs to the protocol is a nonce (i.e., not used for multiple messages).
 
