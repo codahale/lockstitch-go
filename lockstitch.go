@@ -332,53 +332,39 @@ func aesCTR(key, iv, dst, src []byte) {
 		panic(err)
 	}
 
+	if len(src) > aes.BlockSize*4 {
+		// For long messages, the throughput gains of stdlib's AES-CTR implementation are unbeatable.
+		cipher.NewCTR(block, iv).XORKeyStream(dst, src)
+		return
+	}
+
 	// For small messages, it's faster to avoid the full AES-CTR vector pipeline.
-	if len(src) <= aes.BlockSize*4 {
-		ctr := bytes.Clone(iv)
-		tmp := make([]byte, aes.BlockSize)
-		for {
-			block.Encrypt(tmp, ctr)
-			subtle.XORBytes(dst, src, tmp)
+	ctr := bytes.Clone(iv)
+	tmp := make([]byte, aes.BlockSize)
+	for {
+		// Encrypt the counter to produce a block of keystream, then XOR it with the input.
+		block.Encrypt(tmp, ctr)
+		subtle.XORBytes(dst, src, tmp)
 
-			remain := min(len(dst), aes.BlockSize)
-			dst = dst[remain:]
-			src = src[remain:]
+		// Advance the inputs by either a block or the remaining bytes.
+		remain := min(len(dst), aes.BlockSize)
+		dst = dst[remain:]
+		src = src[remain:]
 
-			if len(dst) == 0 {
-				return
-			}
+		// If the input is full processed, return.
+		if len(dst) == 0 {
+			return
+		}
 
-			// Increment counter
-			for i := len(ctr) - 1; i >= 0; i-- {
-				ctr[i]++
-				if ctr[i] != 0 {
-					break
-				}
+		// Increment counter, if necessary.
+		for i := len(ctr) - 1; i >= 0; i-- {
+			ctr[i]++
+			if ctr[i] != 0 {
+				break
 			}
 		}
 	}
-
-	// For long messages, the throughput gains of stdlib's AES-CTR implementation are unbeatable.
-	cipher.NewCTR(block, iv).XORKeyStream(dst, src)
 }
-
-type fakeBlock struct {
-	block cipher.Block
-}
-
-func (f *fakeBlock) BlockSize() int {
-	return f.block.BlockSize()
-}
-
-func (f *fakeBlock) Encrypt(dst, src []byte) {
-	f.block.Encrypt(dst, src)
-}
-
-func (f *fakeBlock) Decrypt(dst, src []byte) {
-	f.block.Decrypt(dst, src)
-}
-
-var _ cipher.Block = (*fakeBlock)(nil)
 
 func aesGMAC(key, dst, src []byte) []byte {
 	block, err := aes.NewCipher(key)
