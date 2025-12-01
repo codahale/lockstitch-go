@@ -122,6 +122,9 @@ keystream, and finally ratchets the transcript.
 
 **IMPORTANT:** A `Derive` operation's output depends on both the label and the output length.
 
+**IMPORTANT:** `Derive` operations are limited to less than 64GiB of output to avoid birthday bound distinguishing
+attacks.
+
 #### KDF Security
 
 A sequence of `Mix` operations followed by a `Derive` operation (or other operations which produce output via `expand`)

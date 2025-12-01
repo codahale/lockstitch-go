@@ -70,6 +70,8 @@ func (p *Protocol) Mix(label string, input []byte) {
 func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	if n < 0 {
 		panic("invalid argument to Derive: n cannot be negative")
+	} else if uint64(n) > 64*1024*1024*1024 {
+		panic("invalid argument to Derive: n must be <= 64GiB")
 	}
 
 	// Append the operation metadata to the transcript.
