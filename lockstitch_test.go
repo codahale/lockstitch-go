@@ -85,6 +85,28 @@ func TestDeriveArgValidation(t *testing.T) {
 	p.Derive("test", nil, -200)
 }
 
+func TestDeriveKnownAnswers(t *testing.T) {
+	t.Parallel()
+
+	p := lockstitch.NewProtocol("example")
+
+	if got, want := hex.EncodeToString(p.Derive("one", nil, 8)), "fad28d904759995e"; got != want {
+		t.Errorf("Derive('one') = %v, want = %v", got, want)
+	}
+
+	if got, want := hex.EncodeToString(p.Derive("two", nil, 15)), "cff3483ac9653bf6c0cc8bd4d80454"; got != want {
+		t.Errorf("Derive('two') = %v, want = %v", got, want)
+	}
+
+	if got, want := hex.EncodeToString(p.Derive("three", nil, 31)), "16c235e9161aa7e8710c6562f4775266c2d12a17ce1d2652ab5fdc2d621654"; got != want {
+		t.Errorf("Derive('three') = %v, want = %v", got, want)
+	}
+
+	if got, want := hex.EncodeToString(p.Derive("four", nil, 63)), "774f34cb5e907663c5bdd3f45c5d53087c31f28ca7d9346fcca61f562d1d8d80d5169b284fd7bea645905c81cf4a1b0afe28e05207c64cb8b7a25494c879cf"; got != want {
+		t.Errorf("Derive('four') = %v, want = %v", got, want)
+	}
+}
+
 func TestKnownAnswers(t *testing.T) {
 	t.Parallel()
 
