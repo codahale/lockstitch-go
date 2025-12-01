@@ -88,7 +88,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	for i := range prf {
 		prf[i] = 0 // There's no way to get just the keystream from stdlib's CTR mode, so we ensure the input is zeroed.
 	}
-	aesCTR(prfKey[:aes256KeyLen], make([]byte, aes.BlockSize), prf, prf)
+	aesCTR(prfKey, zeroIV[:], prf, prf)
 
 	// Ratchet the transcript.
 	p.ratchet()
@@ -118,13 +118,13 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	dak := p.expand("data authentication key", aes256KeyLen)
 
 	// Calculate an AES-256-GMAC authenticator of the plaintext.
-	auth := aesGMAC(dak[:aes256KeyLen], dak[:0], plaintext)
+	auth := aesGMAC(dak, dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
 
 	// Encrypt the plaintext using AES-256-CTR.
-	aesCTR(dek[:aes256KeyLen], make([]byte, aes.BlockSize), ciphertext, plaintext)
+	aesCTR(dek, zeroIV[:], ciphertext, plaintext)
 
 	// Ratchet the transcript.
 	p.ratchet()
@@ -153,10 +153,10 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	dak := p.expand("data authentication key", aes256KeyLen)
 
 	// Decrypt the ciphertext using AES-256-CTR.
-	aesCTR(dek[:aes256KeyLen], make([]byte, aes.BlockSize), plaintext, ciphertext)
+	aesCTR(dek, zeroIV[:], plaintext, ciphertext)
 
 	// Calculate an AES-256-GMAC authenticator of the plaintext.
-	auth := aesGMAC(dak[:aes256KeyLen], dak[:0], plaintext)
+	auth := aesGMAC(dak, dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
@@ -191,7 +191,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	dak := p.expand("data authentication key", aes256KeyLen)
 
 	// Calculate an AES-256-GMAC authenticator of the plaintext.
-	auth := aesGMAC(dak[:aes256KeyLen], dak[:0], plaintext)
+	auth := aesGMAC(dak, dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
@@ -343,8 +343,10 @@ func aesGMAC(key, dst, src []byte) []byte {
 		panic(err)
 	}
 
-	return gcm.Seal(dst, make([]byte, gcm.NonceSize()), nil, src)
+	return gcm.Seal(dst, zeroIV[:gcm.NonceSize()], nil, src)
 }
+
+var zeroIV [aes.BlockSize]byte //nolint:gochecknoglobals // it's just zeros, man
 
 const (
 	opInit      = 0x01
