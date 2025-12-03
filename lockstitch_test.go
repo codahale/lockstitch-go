@@ -94,15 +94,15 @@ func TestDeriveKnownAnswers(t *testing.T) {
 		t.Errorf("Derive('one') = %v, want = %v", got, want)
 	}
 
-	if got, want := hex.EncodeToString(p.Derive("two", nil, 15)), "1292c630bfd29155c6f85be8c24c22"; got != want {
+	if got, want := hex.EncodeToString(p.Derive("two", nil, 15)), "191574900fc0b154f23a5d4c23717a"; got != want {
 		t.Errorf("Derive('two') = %v, want = %v", got, want)
 	}
 
-	if got, want := hex.EncodeToString(p.Derive("three", nil, 31)), "87e7a2f746b87e3dcb8a4a78b41f74d2996a9e8d08132a04ef9224138f1051"; got != want {
+	if got, want := hex.EncodeToString(p.Derive("three", nil, 31)), "5d6858f03d001b6f68784aece8b8fa5bb0f3444b26c1730ca4e87001f7a7b1"; got != want {
 		t.Errorf("Derive('three') = %v, want = %v", got, want)
 	}
 
-	if got, want := hex.EncodeToString(p.Derive("four", nil, 63)), "140e01e3fe122a2a28e832d742b0091cf9d94c4463b173f07c028240f469984f6aa35310a9b4abfd2ab3b63daeaff7666bb1f87509b1bdf506bfd1f721a79d"; got != want {
+	if got, want := hex.EncodeToString(p.Derive("four", nil, 63)), "4b0fab3c6c25620a3ef86fb94ae6c22e4c9b5cef1deecf6df5a8aa95c4aa610adf9e75ddaac582e6eb1bceccbd8a4f1556edd10deff0cf48c81317e675b1e5"; got != want {
 		t.Errorf("Derive('four') = %v, want = %v", got, want)
 	}
 }
@@ -120,16 +120,16 @@ func TestKnownAnswers(t *testing.T) {
 
 	plaintext := []byte("this is an example")
 	ciphertext := protocol.Encrypt("fourth", nil, plaintext)
-	if got, want := hex.EncodeToString(ciphertext), "14a97bb7d4988161cdd0787d8524dc6734ab"; got != want {
+	if got, want := hex.EncodeToString(ciphertext), "34830931d97c14b4b4a5dd2093429347aeb6"; got != want {
 		t.Errorf("Encrypt('fourth') = %v, want = %v", got, want)
 	}
 
 	ciphertext = protocol.Seal("fifth", nil, []byte("this is an example"))
-	if got, want := hex.EncodeToString(ciphertext), "99877f3c1272c42729718d8a78bd69562ba0be48c997d6c865319ad946072ae4ff74"; got != want {
+	if got, want := hex.EncodeToString(ciphertext), "76bef04c2d274072f84e52867c347783aa489041b8936ca27e0f30b5181f1def3879"; got != want {
 		t.Errorf("Seal('fifth') = %v, want = %v", got, want)
 	}
 
-	if got, want := hex.EncodeToString(protocol.Derive("sixth", nil, 8)), "972317ec8f477321"; got != want {
+	if got, want := hex.EncodeToString(protocol.Derive("sixth", nil, 8)), "d95ee73d86687616"; got != want {
 		t.Errorf("Derive('sixth') = %v, want = %v", got, want)
 	}
 }
