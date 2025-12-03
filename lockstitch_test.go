@@ -90,19 +90,19 @@ func TestDeriveKnownAnswers(t *testing.T) {
 
 	p := lockstitch.NewProtocol("example")
 
-	if got, want := hex.EncodeToString(p.Derive("one", nil, 8)), "fad28d904759995e"; got != want {
+	if got, want := hex.EncodeToString(p.Derive("one", nil, 8)), "3b082931bc889539"; got != want {
 		t.Errorf("Derive('one') = %v, want = %v", got, want)
 	}
 
-	if got, want := hex.EncodeToString(p.Derive("two", nil, 15)), "cff3483ac9653bf6c0cc8bd4d80454"; got != want {
+	if got, want := hex.EncodeToString(p.Derive("two", nil, 15)), "1292c630bfd29155c6f85be8c24c22"; got != want {
 		t.Errorf("Derive('two') = %v, want = %v", got, want)
 	}
 
-	if got, want := hex.EncodeToString(p.Derive("three", nil, 31)), "16c235e9161aa7e8710c6562f4775266c2d12a17ce1d2652ab5fdc2d621654"; got != want {
+	if got, want := hex.EncodeToString(p.Derive("three", nil, 31)), "87e7a2f746b87e3dcb8a4a78b41f74d2996a9e8d08132a04ef9224138f1051"; got != want {
 		t.Errorf("Derive('three') = %v, want = %v", got, want)
 	}
 
-	if got, want := hex.EncodeToString(p.Derive("four", nil, 63)), "774f34cb5e907663c5bdd3f45c5d53087c31f28ca7d9346fcca61f562d1d8d80d5169b284fd7bea645905c81cf4a1b0afe28e05207c64cb8b7a25494c879cf"; got != want {
+	if got, want := hex.EncodeToString(p.Derive("four", nil, 63)), "140e01e3fe122a2a28e832d742b0091cf9d94c4463b173f07c028240f469984f6aa35310a9b4abfd2ab3b63daeaff7666bb1f87509b1bdf506bfd1f721a79d"; got != want {
 		t.Errorf("Derive('four') = %v, want = %v", got, want)
 	}
 }
@@ -114,22 +114,22 @@ func TestKnownAnswers(t *testing.T) {
 	protocol.Mix("first", []byte("one"))
 	protocol.Mix("second", []byte("two"))
 
-	if got, want := hex.EncodeToString(protocol.Derive("third", nil, 8)), "94817feeb041f907"; got != want {
+	if got, want := hex.EncodeToString(protocol.Derive("third", nil, 8)), "49639b877ddea480"; got != want {
 		t.Errorf("Derive('third') = %v, want = %v", got, want)
 	}
 
 	plaintext := []byte("this is an example")
 	ciphertext := protocol.Encrypt("fourth", nil, plaintext)
-	if got, want := hex.EncodeToString(ciphertext), "cd7a6d51699ae237dc2ef5a91d3a39639b34"; got != want {
+	if got, want := hex.EncodeToString(ciphertext), "14a97bb7d4988161cdd0787d8524dc6734ab"; got != want {
 		t.Errorf("Encrypt('fourth') = %v, want = %v", got, want)
 	}
 
 	ciphertext = protocol.Seal("fifth", nil, []byte("this is an example"))
-	if got, want := hex.EncodeToString(ciphertext), "659ef429e2680fbaf02a0702928d9600f10efcb90a124c2e040ea52901c8f8650634"; got != want {
+	if got, want := hex.EncodeToString(ciphertext), "99877f3c1272c42729718d8a78bd69562ba0be48c997d6c865319ad946072ae4ff74"; got != want {
 		t.Errorf("Seal('fifth') = %v, want = %v", got, want)
 	}
 
-	if got, want := hex.EncodeToString(protocol.Derive("sixth", nil, 8)), "cb0ec90e45f6eeff"; got != want {
+	if got, want := hex.EncodeToString(protocol.Derive("sixth", nil, 8)), "972317ec8f477321"; got != want {
 		t.Errorf("Derive('sixth') = %v, want = %v", got, want)
 	}
 }

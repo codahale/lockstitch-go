@@ -3,10 +3,10 @@
 Lockstitch is an incremental, stateful cryptographic primitive for symmetric-key cryptographic operations (e.g.,
 hashing, encryption, message authentication codes, and authenticated encryption) in complex protocols. Inspired by
 TupleHash, STROBE, Noise Protocol's stateful objects, Merlin transcripts, and Xoodyak's Cyclist mode, Lockstitch
-uses [SHA-512/256], [AES-256], and [GMAC] to provide 10+ Gb/sec performance on modern processors at a 128-bit security
+uses [SHA-512], [AES-256], and [GMAC] to provide 10+ Gb/sec performance on modern processors at a 128-bit security
 level.
 
-[SHA-512/256]: https://doi.org/10.6028/NIST.FIPS.180-4
+[SHA-512]: https://doi.org/10.6028/NIST.FIPS.180-4
 
 [AES-256]: https://doi.org/10.6028/NIST.FIPS.197-upd1
 
@@ -44,7 +44,7 @@ function Init(domain):
 ``` 
 
 `Init` encodes the length of the domain separation string in bits using the `left_encode` function
-from [NIST SP 800-185][]. This ensures an unambiguous and recoverable encoding for any domain separation string,
+from [NIST SP 800-185]. This ensures an unambiguous and recoverable encoding for any domain separation string,
 regardless of length.
 
 [NIST SP 800-185]: https://www.nist.gov/publications/sha-3-derived-functions-cshake-kmac-tuplehash-and-parallelhash
@@ -70,7 +70,7 @@ function Mix(transcript, label, input):
   return transcript
 ```
 
-`Mix` encodes the length of the label and input in bits using the `left_encode` function from [NIST SP 800-185][]. This
+`Mix` encodes the length of the label and input in bits using the `left_encode` function from [NIST SP 800-185]. This
 ensures an unambiguous and recoverable encoding for any combination of label and input, regardless of length.
 
 If the protocol has a stream of unknown length as an input, the stream should be first hashed with e.g., SHA-256 to
@@ -80,19 +80,19 @@ securely reduce it to an input with a known length.
 
 A `Derive` operation accepts a label and an output length and returns pseudorandom data derived from the protocol's
 state, the label, and the output length. This requires two helper functions: `expand`, which hashes the protocol's
-transcript with SHA-512/256 and generates a derived value, and `ratchet`, which replaces the protocol's transcript with
+transcript with SHA-512 and generates a derived value, and `ratchet`, which replaces the protocol's transcript with
 derived output:
 
 ```text
 function expand(transcript, label, n):
-  hash = SHA_512_256(transcript || 0x06 || left_encode(|label|) || label || right_encode(n))
-  return hash[:n]
+  hash = SHA_512(transcript || 0x06 || left_encode(|label|) || label || right_encode(n))
+  return hash[:min(n, 256)]
 ```
 
 `expand` appends an operation code, label length, label, and output length to a copy of the protocol's transcript,
-hashes it with SHA-512/256, and returns the requested output of up to 256 bits. SHA-512/256 truncates the output of a
-full SHA-512 hash (albeit with a different initial state value), which makes it an instantiation of the [AMAC] PRF
-construction. Consequently, each `expand` call can be modeled as a random oracle relative to the transcript, label, and
+hashes it with SHA-512, and returns the requested output of up to 256 bits. The truncation of the SHA-512 hash by a
+sufficient amount (e.g., 256 bits) converts a collision-resistant hash function into a secure PRF via the [AMAC]
+construction. As a result, each `expand` call can be modeled as a random oracle relative to the transcript, label, and
 output length.
 
 [AMAC]: https://eprint.iacr.org/2016/142
@@ -118,7 +118,10 @@ function Derive(transcript, label, n):
 
 `Derive` appends an operation code, the label length in bits, the label, and the requested output length in bits to the
 transcript. It expands the transcript into a AES-256-CTR key, generates `n` bits of PRF output from the AES-256-CTR
-keystream, and finally ratchets the transcript.
+keystream, and finally ratchets the transcript. Block ciphers in CTR mode are not traditionally used as a PRF due to
+practical constraints on inputs (i.e., block ciphers require fixed-length, uniformly random keys). Here, the AES key is
+derived from the protocol transcript via a secure KDF construction, and the PRF security of CTR mode is based entirely
+on AES's indistinguishability from a random permutation.
 
 **IMPORTANT:** A `Derive` operation's output depends on both the label and the output length.
 
@@ -128,10 +131,11 @@ attacks.
 #### KDF Security
 
 A sequence of `Mix` operations followed by a `Derive` operation (or other operations which produce output via `expand`)
-is effectively using SHA-512/256 to hash an input string constructed using a recoverable encoding (i.e., one that can be
-unambiguously parsed left-to-right) and which includes the derived output length. Given SHA-512/256's
-[security claim][SP 800-107] of being indistinguishable from a random oracle up to a computational complexity of ~196
-bits, this construction maps directly to [Backendal et al.'s RO-KDF construction][n-KDFs] and is a KDF-secure XOF-n-KDF.
+is effectively using SHA-512 to hash an input string constructed using a recoverable encoding (i.e., one that can be
+unambiguously parsed left-to-right) and which includes the derived output length. Given
+SHA-512's [security claim][SP 800-107] of being indistinguishable from a random oracle up to a computational complexity
+of ~256 bits and the truncation performed by `expand` making it [PRF secure][AMAC], this construction maps directly
+to [Backendal et al.'s RO-KDF construction][n-KDFs] and is a KDF-secure XOF-n-KDF.
 
 [SP 800-107]: https://doi.org/10.6028/NIST.SP.800-107r1
 
@@ -140,7 +144,7 @@ bits, this construction maps directly to [Backendal et al.'s RO-KDF construction
 #### KDF Chains
 
 Given that `Derive` is KDF-secure with respect to the protocol's transcript and replaces the protocol's transcript with
-KDF-derived output, sequences of Lockstitch operations which accept input and output in a protocol form a [KDF chain][],
+KDF-derived output, sequences of Lockstitch operations which accept input and output in a protocol form a [KDF chain],
 giving Lockstitch protocols the following security properties:
 
 [KDF chain]: https://signal.org/docs/specifications/doubleratchet/doubleratchet.pdf
@@ -180,7 +184,7 @@ function Decrypt((transcript, S), label, ciphertext):
 ```
 
 `Encrypt` appends an operation code, the label length in bits, the label, and the plaintext length in bits to the
-transcript. It then hashes the transcript with SHA-512/256 and derives a 256-bit data encryption key and a 256-bit data
+transcript. It then hashes the transcript with SHA-512 and derives a 256-bit data encryption key and a 256-bit data
 authentication key. The data encryption key is used to encrypt the plaintext with AES-256-CTR. The data authentication
 key and nonce are used to calculate an AES-256-GMAC authenticator of the plaintext. Finally, the GMAC authenticator is
 appended to the transcript and the transcript is ratcheted.
@@ -232,10 +236,10 @@ function Open(transcript, label, ciphertext || tag):
   return (transcript, plaintext)
 ```
 
-This uses the [synthetic IV construction][SIV] to provide nonce-misuse resistant encryption, with SHA-512/256 and
+This uses the [synthetic IV construction][SIV] to provide nonce-misuse resistant encryption, with SHA-512 and
 AES-256-GMAC serving as the PRF used to derive the IV from the plaintext. Because GMAC is eUF-CMA unforgeable and
-SHA-512/256 is collision-resistant, this construction (unlike e.g., [AES-SIV][AES-SIV]) is key-committing, and because
-the key is derived from the protocol state (again with SHA-512/256), this construction is therefore context-committing.
+SHA-512 is collision-resistant, this construction (unlike e.g., [AES-SIV][AES-SIV]) is key-committing, and because the
+key is derived from the protocol state (again with SHA-512), this construction is therefore context-committing.
 
 [SIV]: https://www.iacr.org/archive/eurocrypt2006/40040377/40040377.pdf
 
@@ -261,7 +265,7 @@ function MessageDigest(message):
   return digest
 ```
 
-This construction is indistinguishable from a random oracle if SHA-512/256 is indistinguishable from a random oracle and
+This construction is indistinguishable from a random oracle if SHA-512 is indistinguishable from a random oracle and
 AES-256-CTR is PRF secure.
 
 ### Message Authentication Codes
@@ -280,7 +284,7 @@ function MAC(key, message):
 The use of labels and the encoding of [`Mix` inputs](#mix) ensures that the key and the message will never overlap, even
 if their lengths vary.
 
-This construction is sUF-CMA secure if SHA-512/256 is indistinguishable from a random oracle and AES-256-CTR is PRF
+This construction is sUF-CMA secure if SHA-512 is indistinguishable from a random oracle and AES-256-CTR is PRF
 secure.
 
 ### Stream Ciphers
@@ -306,7 +310,7 @@ function StreamDecrypt(key, nonce, ciphertext):
 This construction is IND-CPA-secure under the following assumptions:
 
 1. AES-256-CTR is IND-CPA-secure when used with a unique IV.
-2. SHA-512/256 is indistinguishable from a random oracle.
+2. SHA-512 is indistinguishable from a random oracle.
 3. AES-256-GMAC is eUF-CMA secure.
 4. At least one of the inputs to the protocol is a nonce (i.e., not used for multiple messages).
 
@@ -345,7 +349,7 @@ function AEADOpen(key, nonce, ad, ciphertext || tag):
 This construction is IND-CCA2-secure (i.e., both IND-CPA and INT-CTXT) under the following assumptions:
 
 1. AES-256-CTR is IND-CPA-secure when used with a unique IV.
-2. SHA-512/256 is indistinguishable from a random oracle.
+2. SHA-512 is indistinguishable from a random oracle.
 3. AES-256-GMAC is eUF-CMA secure.
 4. At least one of the inputs to the protocol is a nonce (i.e., not used for multiple messages).
 
@@ -356,7 +360,7 @@ and symmetric-key operations.
 
 ### Hybrid Public-Key Encryption
 
-Lockstitch can be used to build an integrated [ECIES][]-style public key encryption scheme:
+Lockstitch can be used to build an integrated [ECIES]-style public key encryption scheme:
 
 [ECIES]: https://en.wikipedia.org/wiki/Integrated_Encryption_Scheme
 
