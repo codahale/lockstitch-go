@@ -7,7 +7,7 @@ import (
 	"github.com/codahale/lockstitch-go/internal/tuplehash"
 )
 
-func TestLeftEncode(t *testing.T) {
+func TestAppendLeftEncode(t *testing.T) {
 	t.Parallel()
 
 	for _, test := range []struct {
@@ -21,13 +21,13 @@ func TestLeftEncode(t *testing.T) {
 		{value: 18446744073709551615, want: []byte{8, 255, 255, 255, 255, 255, 255, 255, 255}},
 		{value: 12345, want: []byte{2, 48, 57}},
 	} {
-		if got, want := tuplehash.LeftEncode(test.value), test.want; !bytes.Equal(got, want) {
+		if got, want := tuplehash.AppendLeftEncode(nil, test.value), test.want; !bytes.Equal(got, want) {
 			t.Errorf("LeftEncode(%d) = %v, want = %v", test.value, got, want)
 		}
 	}
 }
 
-func TestRightEncode(t *testing.T) {
+func TestAppendRightEncode(t *testing.T) {
 	t.Parallel()
 
 	for _, test := range []struct {
@@ -41,7 +41,7 @@ func TestRightEncode(t *testing.T) {
 		{value: 18446744073709551615, want: []byte{255, 255, 255, 255, 255, 255, 255, 255, 8}},
 		{value: 12345, want: []byte{48, 57, 2}},
 	} {
-		if got, want := tuplehash.RightEncode(test.value), test.want; !bytes.Equal(got, want) {
+		if got, want := tuplehash.AppendRightEncode(nil, test.value), test.want; !bytes.Equal(got, want) {
 			t.Errorf("RightEncode(%d) = %v, want = %v", test.value, got, want)
 		}
 	}
@@ -50,8 +50,8 @@ func TestRightEncode(t *testing.T) {
 func FuzzLeftEncode(f *testing.F) {
 	f.Add(uint64(2), uint64(3))
 	f.Fuzz(func(t *testing.T, a uint64, b uint64) {
-		ab := tuplehash.LeftEncode(a)
-		bb := tuplehash.LeftEncode(b)
+		ab := tuplehash.AppendLeftEncode(nil, a)
+		bb := tuplehash.AppendLeftEncode(nil, b)
 
 		if a == b && !bytes.Equal(ab, bb) {
 			t.Errorf("tuplehash.LeftEncode(%v) = %v, tuplehash.LeftEncode(%v) = %v", a, ab, b, bb)
@@ -64,8 +64,8 @@ func FuzzLeftEncode(f *testing.F) {
 func FuzzRightEncode(f *testing.F) {
 	f.Add(uint64(2), uint64(3))
 	f.Fuzz(func(t *testing.T, a uint64, b uint64) {
-		ab := tuplehash.RightEncode(a)
-		bb := tuplehash.RightEncode(b)
+		ab := tuplehash.AppendRightEncode(nil, a)
+		bb := tuplehash.AppendRightEncode(nil, b)
 
 		if a == b && !bytes.Equal(ab, bb) {
 			t.Errorf("tuplehash.RightEncode(%v) = %v, tuplehash.RightEncode(%v) = %v", a, ab, b, bb)
@@ -76,17 +76,19 @@ func FuzzRightEncode(f *testing.F) {
 }
 
 func BenchmarkLeftEncode(b *testing.B) {
-	b.ReportAllocs()
+	out := make([]byte, tuplehash.MaxLen)
 
+	b.ReportAllocs()
 	for b.Loop() {
-		tuplehash.LeftEncode(2408234)
+		tuplehash.AppendLeftEncode(out[:0], 2408234)
 	}
 }
 
 func BenchmarkRightEncode(b *testing.B) {
-	b.ReportAllocs()
+	out := make([]byte, tuplehash.MaxLen)
 
+	b.ReportAllocs()
 	for b.Loop() {
-		tuplehash.RightEncode(2408234)
+		tuplehash.AppendRightEncode(out[:0], 2408234)
 	}
 }

@@ -44,9 +44,9 @@ func NewProtocol(domain string) Protocol {
 	transcript := sha512.New()
 
 	// Append the operation metadata to the transcript.
-	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(domain))
-	metadata[0] = opInit
-	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(domain))*bitsPerByte)...)
+	metadata := make([]byte, 0, 1+tuplehash.MaxLen+len(domain))
+	metadata = append(metadata, opInit)
+	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(domain))*bitsPerByte)
 	metadata = append(metadata, []byte(domain)...)
 	transcript.Write(metadata)
 
@@ -56,11 +56,11 @@ func NewProtocol(domain string) Protocol {
 // Mix ratchets the protocol's state using the given label and input.
 func (p *Protocol) Mix(label string, input []byte) {
 	// Append the operation metadata and data to the transcript.
-	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
-	metadata[0] = opMix
-	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(label))*bitsPerByte)...)
+	metadata := make([]byte, 0, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
+	metadata = append(metadata, opMix)
+	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, []byte(label)...)
-	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(input))*bitsPerByte)...)
+	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(input))*bitsPerByte)
 	p.transcript.Write(metadata)
 	p.transcript.Write(input)
 }
@@ -76,11 +76,11 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	}
 
 	// Append the operation metadata to the transcript.
-	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
-	metadata[0] = opDerive
-	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(label))*bitsPerByte)...)
+	metadata := make([]byte, 0, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
+	metadata = append(metadata, opDerive)
+	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, []byte(label)...)
-	metadata = append(metadata, tuplehash.LeftEncode(uint64(n)*bitsPerByte)...)
+	metadata = tuplehash.AppendLeftEncode(metadata, uint64(n)*bitsPerByte)
 	p.transcript.Write(metadata)
 
 	// Expand a PRF key.
@@ -109,11 +109,11 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	ret, ciphertext := mem.SliceForAppend(dst, len(plaintext))
 
 	// Append the operation metadata to the transcript.
-	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
-	metadata[0] = opCrypt
-	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(label))*bitsPerByte)...)
+	metadata := make([]byte, 0, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
+	metadata = append(metadata, opCrypt)
+	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, []byte(label)...)
-	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(plaintext))*bitsPerByte)...)
+	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(plaintext))*bitsPerByte)
 	p.transcript.Write(metadata)
 
 	// Expand a data encryption key and a data authentication key from the transcript.
@@ -144,11 +144,11 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	ret, plaintext := mem.SliceForAppend(dst, len(ciphertext))
 
 	// Append the operation metadata to the transcript.
-	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
-	metadata[0] = opCrypt
-	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(label))*bitsPerByte)...)
+	metadata := make([]byte, 0, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
+	metadata = append(metadata, opCrypt)
+	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, []byte(label)...)
-	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(plaintext))*bitsPerByte)...)
+	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(plaintext))*bitsPerByte)
 	p.transcript.Write(metadata)
 
 	// Expand a data encryption key, an IV, and a data authentication key from the transcript.
@@ -182,11 +182,11 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	ciphertext, tag := ciphertext[:len(plaintext)], ciphertext[len(plaintext):]
 
 	// Append the operation metadata to the transcript.
-	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
-	metadata[0] = opAuthCrypt
-	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(label))*bitsPerByte)...)
+	metadata := make([]byte, 0, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
+	metadata = append(metadata, opAuthCrypt)
+	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, []byte(label)...)
-	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(plaintext))*bitsPerByte)...)
+	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(plaintext))*bitsPerByte)
 	p.transcript.Write(metadata)
 
 	// Expand a data encryption key and a data authentication key from the transcript.
@@ -223,11 +223,11 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	ret, plaintext := mem.SliceForAppend(dst, len(ciphertext))
 
 	// Append the operation metadata to the transcript.
-	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
-	metadata[0] = opAuthCrypt
-	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(label))*bitsPerByte)...)
+	metadata := make([]byte, 0, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
+	metadata = append(metadata, opAuthCrypt)
+	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, []byte(label)...)
-	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(plaintext))*bitsPerByte)...)
+	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(plaintext))*bitsPerByte)
 	p.transcript.Write(metadata)
 
 	// Expand a data encryption key and a data authentication key from the transcript.
@@ -288,9 +288,9 @@ func (p *Protocol) ratchet() {
 	p.transcript.Reset()
 
 	// Append the operation metadata and data to the transcript.
-	metadata := make([]byte, 1, 1+tuplehash.MaxLen)
-	metadata[0] = opRatchet
-	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(rak))*bitsPerByte)...)
+	metadata := make([]byte, 0, 1+tuplehash.MaxLen)
+	metadata = append(metadata, opRatchet)
+	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(rak))*bitsPerByte)
 	p.transcript.Write(metadata)
 	p.transcript.Write(rak)
 }
@@ -309,11 +309,11 @@ func (p *Protocol) expand(label string, n int) []byte {
 	}
 
 	// Append the operation metadata and data to the transcript copy.
-	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
-	metadata[0] = opExpand
-	metadata = append(metadata, tuplehash.LeftEncode(uint64(len(label))*bitsPerByte)...)
+	metadata := make([]byte, 0, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
+	metadata = append(metadata, opExpand)
+	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, []byte(label)...)
-	metadata = append(metadata, tuplehash.RightEncode(uint64(n)*bitsPerByte)...) //nolint:gosec // n <= 32
+	metadata = tuplehash.AppendRightEncode(metadata, uint64(n)*bitsPerByte) //nolint:gosec // n <= 32
 	_, _ = h.Write(metadata)
 
 	// Generate up to 32 bytes of output.
