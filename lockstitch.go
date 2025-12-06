@@ -238,7 +238,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	aesCTR(dek, tag, plaintext, ciphertext)
 
 	// Calculate an AES-256-GMAC authenticator of the plaintext.
-	auth := aesGMAC(dak[:aes256KeyLen], dak[:0], plaintext)
+	auth := aesGMAC(dak, dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
