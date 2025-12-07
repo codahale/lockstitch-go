@@ -313,7 +313,7 @@ func (p *Protocol) expand(label string, n int) []byte {
 	metadata = append(metadata, opExpand)
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, []byte(label)...)
-	metadata = tuplehash.AppendRightEncode(metadata, uint64(n)*bitsPerByte)
+	metadata = tuplehash.AppendRightEncode(metadata, uint64(n)*bitsPerByte) //nolint:gosec // n <= 32
 	_, _ = h.Write(metadata)
 
 	// Generate up to 32 bytes of output.
