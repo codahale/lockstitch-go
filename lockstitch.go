@@ -91,7 +91,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	for i := range prf {
 		prf[i] = 0 // There's no way to get just the keystream from stdlib's CTR mode, so we ensure the input is zeroed.
 	}
-	aesCTR(prfKey, zeroIV[:], prf, prf)
+	aesCTR(prfKey, make([]byte, aes.BlockSize), prf, prf)
 
 	// Ratchet the transcript.
 	p.ratchet()
@@ -121,13 +121,13 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	dak := p.expand("data authentication key", aes256KeyLen)
 
 	// Calculate an AES-256-GMAC authenticator of the plaintext.
-	auth := aesGMAC(dak, dak[:0], plaintext)
+	auth := aesGMAC(dak, make([]byte, gcmNonceLen), dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
 
 	// Encrypt the plaintext using AES-256-CTR.
-	aesCTR(dek, zeroIV[:], ciphertext, plaintext)
+	aesCTR(dek, make([]byte, aes.BlockSize), ciphertext, plaintext)
 
 	// Ratchet the transcript.
 	p.ratchet()
@@ -156,10 +156,10 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	dak := p.expand("data authentication key", aes256KeyLen)
 
 	// Decrypt the ciphertext using AES-256-CTR.
-	aesCTR(dek, zeroIV[:], plaintext, ciphertext)
+	aesCTR(dek, make([]byte, aes.BlockSize), plaintext, ciphertext)
 
 	// Calculate an AES-256-GMAC authenticator of the plaintext.
-	auth := aesGMAC(dak, dak[:0], plaintext)
+	auth := aesGMAC(dak, make([]byte, gcmNonceLen), dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
@@ -194,7 +194,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	dak := p.expand("data authentication key", aes256KeyLen)
 
 	// Calculate an AES-256-GMAC authenticator of the plaintext.
-	auth := aesGMAC(dak, dak[:0], plaintext)
+	auth := aesGMAC(dak, make([]byte, gcmNonceLen), dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
@@ -238,7 +238,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	aesCTR(dek, tag, plaintext, ciphertext)
 
 	// Calculate an AES-256-GMAC authenticator of the plaintext.
-	auth := aesGMAC(dak, dak[:0], plaintext)
+	auth := aesGMAC(dak, make([]byte, gcmNonceLen), dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
@@ -351,7 +351,7 @@ func aesCTR(key, iv, dst, src []byte) {
 		dst = dst[remain:]
 		src = src[remain:]
 
-		// If the input is full processed, return.
+		// If the input is fully processed, return.
 		if len(dst) == 0 {
 			return
 		}
@@ -366,7 +366,7 @@ func aesCTR(key, iv, dst, src []byte) {
 	}
 }
 
-func aesGMAC(key, dst, src []byte) []byte {
+func aesGMAC(key, nonce, dst, src []byte) []byte {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		panic(err)
@@ -377,10 +377,8 @@ func aesGMAC(key, dst, src []byte) []byte {
 		panic(err)
 	}
 
-	return gcm.Seal(dst, zeroIV[:gcm.NonceSize()], nil, src)
+	return gcm.Seal(dst, nonce, nil, src)
 }
-
-var zeroIV [aes.BlockSize]byte //nolint:gochecknoglobals // it's just zeros, man
 
 const (
 	opInit      = 0x01
@@ -393,5 +391,6 @@ const (
 
 	maxExpandLen = 32
 	aes256KeyLen = 32
+	gcmNonceLen  = 12
 	bitsPerByte  = 8
 )
