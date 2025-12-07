@@ -2,7 +2,7 @@
 // operations (e.g., hashing, encryption, message authentication codes, and authenticated encryption) in complex
 // protocols. Inspired by TupleHash, STROBE, Noise Protocol's stateful objects, Merlin transcripts, and Xoodyak's
 // Cyclist mode, Lockstitch uses [SHA-512], [AES-256], and [GMAC] to provide 10+ Gb/sec performance on modern processors
-// at a 128-bit security level.
+// at a 256-bit security level.
 //
 // [SHA-512]: https://doi.org/10.6028/NIST.FIPS.180-4
 // [AES-256]: https://doi.org/10.6028/NIST.FIPS.197-upd1
