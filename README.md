@@ -23,7 +23,7 @@ In addition, there is absolutely no guarantee of backwards compatibility.
 
 ## Design
 
-A Lockstitch protocol is a stateful object which has five different operations:
+A Lockstitch protocol is a stateful object that has five different operations:
 
 * `Init`: Initializes a protocol with a domain separation string.
 * `Mix`: Mixes a piece of data into the protocol's state, making all future outputs dependent on it.

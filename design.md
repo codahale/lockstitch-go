@@ -117,7 +117,7 @@ function Derive(transcript, label, n):
 ```
 
 `Derive` appends an operation code, the label length in bits, the label, and the requested output length in bits to the
-transcript. It expands the transcript into a AES-256-CTR key, generates `n` bits of PRF output from the AES-256-CTR
+transcript. It expands the transcript into an AES-256-CTR key, generates `n` bits of PRF output from the AES-256-CTR
 keystream, and finally ratchets the transcript. Block ciphers in CTR mode are not traditionally used as a PRF due to
 practical constraints on inputs (i.e., block ciphers require fixed-length, uniformly random keys). Here, the AES key is
 derived from the protocol transcript via a secure KDF construction, and the PRF security of CTR mode is based entirely
@@ -130,12 +130,12 @@ attacks.
 
 #### KDF Security
 
-A sequence of `Mix` operations followed by a `Derive` operation (or other operations which produce output via `expand`)
-is effectively using SHA-512 to hash an input string constructed using a recoverable encoding (i.e., one that can be
-unambiguously parsed left-to-right) and which includes the derived output length. Given
+A sequence of `Mix` operations followed by an operation which produces output via `expand` (e.g., `Derive`, `Encrypt`,
+`Seal`, etc.) is equivalent to constructing a string using a recoverable encoding (i.e., one that can be unambiguously
+parsed left-to-right) which includes the output length, hashing it with SHA-512, and truncating the output. Given
 SHA-512's [security claim][SP 800-107] of being indistinguishable from a random oracle up to a computational complexity
 of ~256 bits and the truncation performed by `expand` making it [PRF secure][AMAC], this construction maps directly
-to [Backendal et al.'s RO-KDF construction][n-KDFs] and is a KDF-secure XOF-n-KDF.
+to [Backendal et al.'s RO-KDF construction][n-KDFs] and is a KDF-secure XOF-n-KDF (for 0 < ℓ <= 32).
 
 [SP 800-107]: https://doi.org/10.6028/NIST.SP.800-107r1
 
@@ -144,8 +144,8 @@ to [Backendal et al.'s RO-KDF construction][n-KDFs] and is a KDF-secure XOF-n-KD
 #### KDF Chains
 
 Given that `Derive` is KDF-secure with respect to the protocol's transcript and replaces the protocol's transcript with
-KDF-derived output, sequences of Lockstitch operations which accept input and output in a protocol form a [KDF chain],
-giving Lockstitch protocols the following security properties:
+KDF-derived output, sequences of Lockstitch operations which accept input and output in a protocol form a [KDF chain].
+Consequently, Lockstitch protocols have the following security properties:
 
 [KDF chain]: https://signal.org/docs/specifications/doubleratchet/doubleratchet.pdf
 
@@ -187,7 +187,7 @@ function Decrypt((transcript, S), label, ciphertext):
 transcript. It then hashes the transcript with SHA-512 and derives a 256-bit data encryption key and a 256-bit data
 authentication key. The data encryption key is used to encrypt the plaintext with AES-256-CTR. The data authentication
 key and nonce are used to calculate an AES-256-GMAC authenticator of the plaintext. Finally, the GMAC authenticator is
-appended to the transcript and the transcript is ratcheted.
+appended to the transcript, and the transcript is ratcheted.
 
 Two points bear mentioning about `Encrypt` and `Decrypt`:
 
@@ -236,7 +236,7 @@ function Open(transcript, label, ciphertext || tag):
   return (transcript, plaintext)
 ```
 
-This uses the [synthetic IV construction][SIV] to provide nonce-misuse resistant encryption, with SHA-512 and
+This uses the [synthetic IV construction][SIV] to provide nonce-misuse-resistant encryption, with SHA-512 and
 AES-256-GMAC serving as the PRF used to derive the IV from the plaintext. Because GMAC is eUF-CMA unforgeable and
 SHA-512 is collision-resistant, this construction (unlike e.g., [AES-SIV][AES-SIV]) is key-committing, and because the
 key is derived from the protocol state (again with SHA-512), this construction is therefore context-committing.
@@ -387,9 +387,9 @@ function HPKEDecrypt(receiver, ephemeral.pub, ciphertext || tag):
 
 **WARNING:** This construction does not provide authentication in the public key setting. An adversary in possession of
 the receiver's public key (i.e., anyone) can create ciphertexts which will decrypt as valid. In the symmetric key
-setting (i.e., an adversary without the receiver's public key), this is IND-CCA secure, but the real-world scenarios in
-which that applies are minimal. As-is, the tag is more like a checksum than a MAC, preventing modifications only by
-adversaries who don't have the recipient's public key.
+setting (i.e., an adversary without the receiver's public key), this is IND-CCA secure, but that setting is not
+realistic. As-is, the tag is more like a checksum than a MAC, preventing modifications only by adversaries who don't
+have the recipient's public key.
 
 Using a static ECDH shared secret (i.e. `ECDH(receiver.pub, sender.priv)`) would add implicit authentication but would
 require a nonce or an ephemeral key to be IND-CCA secure. The resulting scheme would be outsider secure in the public
@@ -489,7 +489,8 @@ plaintext).
 
 An adversary attacking an `StE` scheme can decrypt a signed message sent to them and re-encrypt it for someone else,
 allowing them to pose as the original sender. This scheme makes simple replay attacks impossible by including both the
-intended sender and receiver's public keys in the protocol state. The initial [HPKE](#hybrid-public-key-encryption)
--style portion of the protocol can be trivially constructed by an adversary with an ephemeral key pair of their
-choosing. However, the final portion is the sUF-CMA secure [EdDSA-style Schnorr signature scheme](#digital-signatures)
-from the previous section and unforgeable without the sender's private key.
+intended sender and receiver's public keys in the protocol state. The
+initial [HPKE-style](#hybrid-public-key-encryption) portion of the protocol can be trivially constructed by an adversary
+with an ephemeral key pair of their choosing. However, the final portion is the sUF-CMA
+secure [EdDSA-style Schnorr signature scheme](#digital-signatures) from the previous section and unforgeable without the
+sender's private key.
