@@ -394,16 +394,18 @@ func sliceForAppend(in []byte, n int) (head, tail []byte) {
 }
 
 const (
-	opInit      = 0x01
-	opMix       = 0x02
-	opDerive    = 0x03
-	opCrypt     = 0x04
-	opAuthCrypt = 0x05
-	opExpand    = 0x06
-	opRatchet   = 0x07
+	opInit      = 0x01 // Initializes a protocol with a domain separation string.
+	opMix       = 0x02 // Mixes a labeled input value into the protocol's state.
+	opDerive    = 0x03 // Derives pseudorandom data from the protocol's transcript.
+	opCrypt     = 0x04 // Encrypts or decrypts a plaintext value.
+	opAuthCrypt = 0x05 // Opens or seals a plaintext value.
+	opExpand    = 0x06 // Internal only. Derives up to 256 bits of PRF data from the protocol's transcript.
+	opRatchet   = 0x07 // Internal only. Replaces the protocol's transcript with 256 bits of derived data.
+)
 
-	maxExpandLen = 32
-	aes256KeyLen = 32
-	gcmNonceLen  = 12
-	bitsPerByte  = 8
+const (
+	maxExpandLen = 32 // The maximum number of bytes an expand operation can return.
+	aes256KeyLen = 32 // The length, in bytes, of an AES-256 key.
+	gcmNonceLen  = 12 // The length, in bytes, of an AES-GCM nonce.
+	bitsPerByte  = 8  // The number of bits in one byte.
 )
