@@ -10,15 +10,13 @@
 package lockstitch
 
 import (
-	"bytes"
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/sha512"
 	"crypto/subtle"
 	"encoding"
 	"errors"
 	"hash"
 
+	"github.com/codahale/lockstitch-go/internal/aes"
 	"github.com/codahale/lockstitch-go/internal/tuplehash"
 )
 
@@ -90,7 +88,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	for i := range prf {
 		prf[i] = 0 // There's no way to get just the keystream from stdlib's CTR mode, so we ensure the input is zeroed.
 	}
-	aesCTR(prfKey, make([]byte, aes.BlockSize), prf, prf)
+	aes.CTR(prfKey, make([]byte, aes.BlockSize), prf, prf)
 
 	// Ratchet the transcript.
 	p.ratchet()
@@ -120,13 +118,13 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	dak := p.expand("data authentication key", aes256KeyLen)
 
 	// Calculate an AES-256-GMAC authenticator of the plaintext.
-	auth := aesGMAC(dak, make([]byte, gcmNonceLen), dak[:0], plaintext)
+	auth := aes.GMAC(dak, make([]byte, gcmNonceLen), dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
 
 	// Encrypt the plaintext using AES-256-CTR.
-	aesCTR(dek, make([]byte, aes.BlockSize), ciphertext, plaintext)
+	aes.CTR(dek, make([]byte, aes.BlockSize), ciphertext, plaintext)
 
 	// Ratchet the transcript.
 	p.ratchet()
@@ -155,10 +153,10 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	dak := p.expand("data authentication key", aes256KeyLen)
 
 	// Decrypt the ciphertext using AES-256-CTR.
-	aesCTR(dek, make([]byte, aes.BlockSize), plaintext, ciphertext)
+	aes.CTR(dek, make([]byte, aes.BlockSize), plaintext, ciphertext)
 
 	// Calculate an AES-256-GMAC authenticator of the plaintext.
-	auth := aesGMAC(dak, make([]byte, gcmNonceLen), dak[:0], plaintext)
+	auth := aes.GMAC(dak, make([]byte, gcmNonceLen), dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
@@ -193,7 +191,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	dak := p.expand("data authentication key", aes256KeyLen)
 
 	// Calculate an AES-256-GMAC authenticator of the plaintext.
-	auth := aesGMAC(dak, make([]byte, gcmNonceLen), dak[:0], plaintext)
+	auth := aes.GMAC(dak, make([]byte, gcmNonceLen), dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
@@ -202,7 +200,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	copy(tag, p.expand("authentication tag", TagLen))
 
 	// Encrypt the plaintext using AES-256-CTR with the tag as the IV.
-	aesCTR(dek, tag, ciphertext, plaintext)
+	aes.CTR(dek, tag, ciphertext, plaintext)
 
 	// Ratchet the transcript.
 	p.ratchet()
@@ -234,10 +232,10 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	dak := p.expand("data authentication key", aes256KeyLen)
 
 	// Decrypt the ciphertext using AES-256-CTR with the tag as the IV.
-	aesCTR(dek, tag, plaintext, ciphertext)
+	aes.CTR(dek, tag, plaintext, ciphertext)
 
 	// Calculate an AES-256-GMAC authenticator of the plaintext.
-	auth := aesGMAC(dak, make([]byte, gcmNonceLen), dak[:0], plaintext)
+	auth := aes.GMAC(dak, make([]byte, gcmNonceLen), dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
@@ -324,60 +322,6 @@ var (
 	_ encoding.BinaryUnmarshaler = (*Protocol)(nil)
 	_ encoding.BinaryAppender    = (*Protocol)(nil)
 )
-
-func aesCTR(key, iv, dst, src []byte) {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		panic(err)
-	}
-
-	if len(src) > aes.BlockSize*4 {
-		// For long messages, the throughput gains of stdlib's AES-CTR implementation are unbeatable.
-		cipher.NewCTR(block, iv).XORKeyStream(dst, src)
-		return
-	}
-
-	// For small messages, it's faster to avoid the full AES-CTR vector pipeline.
-	ctr := bytes.Clone(iv)
-	tmp := make([]byte, aes.BlockSize)
-	for {
-		// Encrypt the counter to produce a block of keystream, then XOR it with the input.
-		block.Encrypt(tmp, ctr)
-		subtle.XORBytes(dst, src, tmp)
-
-		// Advance the inputs by either a block or the remaining bytes.
-		remain := min(len(dst), aes.BlockSize)
-		dst = dst[remain:]
-		src = src[remain:]
-
-		// If the input is fully processed, return.
-		if len(dst) == 0 {
-			return
-		}
-
-		// Increment counter, if necessary.
-		for i := len(ctr) - 1; i >= 0; i-- {
-			ctr[i]++
-			if ctr[i] != 0 {
-				break
-			}
-		}
-	}
-}
-
-func aesGMAC(key, nonce, dst, src []byte) []byte {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		panic(err)
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		panic(err)
-	}
-
-	return gcm.Seal(dst, nonce, nil, src)
-}
 
 // sliceForAppend takes a slice and a requested number of bytes. It returns a slice with the contents of the given slice
 // followed by that many bytes and a second slice that aliases into it and contains only the extra bytes. If the
