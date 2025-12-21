@@ -21,7 +21,7 @@ func CTR(key, iv, dst, src []byte) {
 	}
 
 	// For small messages, it's faster to avoid the full AES-CTR vector pipeline.
-	if len(src) < aes.BlockSize*4 {
+	if len(src) < BlockSize*4 {
 		ctrSmall(block, iv, dst, src)
 		return
 	}
@@ -32,14 +32,14 @@ func CTR(key, iv, dst, src []byte) {
 
 func ctrSmall(block cipher.Block, iv, dst, src []byte) {
 	ctr := bytes.Clone(iv)
-	tmp := make([]byte, aes.BlockSize)
+	tmp := make([]byte, BlockSize)
 	for {
 		// Encrypt the counter to produce a block of keystream, then XOR it with the input.
 		block.Encrypt(tmp, ctr)
 		subtle.XORBytes(dst, src, tmp)
 
 		// Advance the inputs by either a block or the remaining bytes.
-		remain := min(len(dst), aes.BlockSize)
+		remain := min(len(dst), BlockSize)
 		dst = dst[remain:]
 		src = src[remain:]
 
