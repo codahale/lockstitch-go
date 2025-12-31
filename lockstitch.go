@@ -1,10 +1,10 @@
 // Package lockstitch provides an incremental, stateful cryptographic primitive for symmetric-key cryptographic
 // operations (e.g., hashing, encryption, message authentication codes, and authenticated encryption) in complex
 // protocols. Inspired by TupleHash, STROBE, Noise Protocol's stateful objects, Merlin transcripts, and Xoodyak's
-// Cyclist mode, Lockstitch uses [SHA-512], [AES-256], and [GMAC] to provide 10+ Gb/sec performance on modern processors
-// at a 256-bit security level.
+// Cyclist mode, Lockstitch uses [SHA-512/256], [AES-256], and [GMAC] to provide 10+ Gb/sec performance on modern
+// processors at a 256-bit security level.
 //
-// [SHA-512]: https://doi.org/10.6028/NIST.FIPS.180-4
+// [SHA-512/256]: https://doi.org/10.6028/NIST.FIPS.180-4
 // [AES-256]: https://doi.org/10.6028/NIST.FIPS.197-upd1
 // [GMAC]: https://doi.org/10.6028/NIST.SP.800-38D
 package lockstitch
@@ -38,7 +38,7 @@ type Protocol struct {
 // NewProtocol creates a new Protocol with the given domain separation string.
 func NewProtocol(domain string) Protocol {
 	// Initialize an empty transcript.
-	transcript := sha512.New()
+	transcript := sha512.New512_256()
 
 	// Append the operation metadata to the transcript.
 	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(domain))
@@ -279,7 +279,7 @@ func (p *Protocol) MarshalBinary() (data []byte, err error) {
 // protocol transcript.
 func (p *Protocol) ratchet() {
 	// Expand a ratchet key.
-	rak := p.expand("ratchet key", maxExpandLen)
+	rak := p.expand("ratchet key", p.transcript.Size())
 
 	// Clear the transcript.
 	p.transcript.Reset()
@@ -301,7 +301,7 @@ func (p *Protocol) expand(label string, n int) []byte {
 		panic(err)
 	}
 
-	if n > maxExpandLen {
+	if n > p.transcript.Size() {
 		panic("invalid expand length")
 	}
 
@@ -348,7 +348,6 @@ const (
 )
 
 const (
-	maxExpandLen = 32 // The maximum number of bytes an expand operation can return.
 	aes256KeyLen = 32 // The length, in bytes, of an AES-256 key.
 	gcmNonceLen  = 12 // The length, in bytes, of an AES-GCM nonce.
 	bitsPerByte  = 8  // The number of bits in one byte.
