@@ -1,16 +1,16 @@
 // Package lockstitch provides an incremental, stateful cryptographic primitive for symmetric-key cryptographic
 // operations (e.g., hashing, encryption, message authentication codes, and authenticated encryption) in complex
 // protocols. Inspired by TupleHash, STROBE, Noise Protocol's stateful objects, Merlin transcripts, and Xoodyak's
-// Cyclist mode, Lockstitch uses [SHA-512/256], [AES-256], and [GMAC] to provide 10+ Gb/sec performance on modern
-// processors at a 256-bit security level.
+// Cyclist mode, Lockstitch uses [SHA-256], [AES-128], and [GMAC] to provide 10+ Gb/sec performance on modern
+// processors at a 128-bit security level.
 //
-// [SHA-512/256]: https://doi.org/10.6028/NIST.FIPS.180-4
-// [AES-256]: https://doi.org/10.6028/NIST.FIPS.197-upd1
+// [SHA-256]: https://doi.org/10.6028/NIST.FIPS.180-4
+// [AES-128]: https://doi.org/10.6028/NIST.FIPS.197-upd1
 // [GMAC]: https://doi.org/10.6028/NIST.SP.800-38D
 package lockstitch
 
 import (
-	"crypto/sha512"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding"
 	"errors"
@@ -38,7 +38,7 @@ type Protocol struct {
 // NewProtocol creates a new Protocol with the given domain separation string.
 func NewProtocol(domain string) Protocol {
 	// Initialize an empty transcript.
-	transcript := sha512.New512_256()
+	transcript := sha256.New()
 
 	// Append the operation metadata to the transcript.
 	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(domain))
@@ -81,9 +81,9 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	p.transcript.Write(metadata)
 
 	// Expand a PRF key.
-	prfKey := p.expand("prf key", aes256KeyLen)
+	prfKey := p.expand("prf key")
 
-	// Expand n bytes of AES-256-CTR keystream for PRF output.
+	// Expand n bytes of AES-128-CTR keystream for PRF output.
 	ret, prf := sliceForAppend(dst, n)
 	for i := range prf {
 		prf[i] = 0 // There's no way to get just the keystream from stdlib's CTR mode, so we ensure the input is zeroed.
@@ -114,16 +114,16 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	p.transcript.Write(metadata)
 
 	// Expand a data encryption key and a data authentication key from the transcript.
-	dek := p.expand("data encryption key", aes256KeyLen)
-	dak := p.expand("data authentication key", aes256KeyLen)
+	dek := p.expand("data encryption key")
+	dak := p.expand("data authentication key")
 
-	// Calculate an AES-256-GMAC authenticator of the plaintext.
+	// Calculate an AES-128-GMAC authenticator of the plaintext.
 	auth := aes.GMAC(dak, make([]byte, gcmNonceLen), dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
 
-	// Encrypt the plaintext using AES-256-CTR.
+	// Encrypt the plaintext using AES-128-CTR.
 	aes.CTR(dek, make([]byte, aes.BlockSize), ciphertext, plaintext)
 
 	// Ratchet the transcript.
@@ -149,13 +149,13 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	p.transcript.Write(metadata)
 
 	// Expand a data encryption key, an IV, and a data authentication key from the transcript.
-	dek := p.expand("data encryption key", aes256KeyLen)
-	dak := p.expand("data authentication key", aes256KeyLen)
+	dek := p.expand("data encryption key")
+	dak := p.expand("data authentication key")
 
-	// Decrypt the ciphertext using AES-256-CTR.
+	// Decrypt the ciphertext using AES-128-CTR.
 	aes.CTR(dek, make([]byte, aes.BlockSize), plaintext, ciphertext)
 
-	// Calculate an AES-256-GMAC authenticator of the plaintext.
+	// Calculate an AES-128-GMAC authenticator of the plaintext.
 	auth := aes.GMAC(dak, make([]byte, gcmNonceLen), dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
@@ -187,19 +187,19 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	p.transcript.Write(metadata)
 
 	// Expand a data encryption key and a data authentication key from the transcript.
-	dek := p.expand("data encryption key", aes256KeyLen)
-	dak := p.expand("data authentication key", aes256KeyLen)
+	dek := p.expand("data encryption key")
+	dak := p.expand("data authentication key")
 
-	// Calculate an AES-256-GMAC authenticator of the plaintext.
+	// Calculate an AES-128-GMAC authenticator of the plaintext.
 	auth := aes.GMAC(dak, make([]byte, gcmNonceLen), dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
 
 	// Expand an authentication tag.
-	copy(tag, p.expand("authentication tag", TagLen))
+	copy(tag, p.expand("authentication tag"))
 
-	// Encrypt the plaintext using AES-256-CTR with the tag as the IV.
+	// Encrypt the plaintext using AES-128-CTR with the tag as the IV.
 	aes.CTR(dek, tag, ciphertext, plaintext)
 
 	// Ratchet the transcript.
@@ -228,20 +228,20 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	p.transcript.Write(metadata)
 
 	// Expand a data encryption key and a data authentication key from the transcript.
-	dek := p.expand("data encryption key", aes256KeyLen)
-	dak := p.expand("data authentication key", aes256KeyLen)
+	dek := p.expand("data encryption key")
+	dak := p.expand("data authentication key")
 
-	// Decrypt the ciphertext using AES-256-CTR with the tag as the IV.
+	// Decrypt the ciphertext using AES-128-CTR with the tag as the IV.
 	aes.CTR(dek, tag, plaintext, ciphertext)
 
-	// Calculate an AES-256-GMAC authenticator of the plaintext.
+	// Calculate an AES-128-GMAC authenticator of the plaintext.
 	auth := aes.GMAC(dak, make([]byte, gcmNonceLen), dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
 
 	// Expand a counterfactual authentication tag.
-	tagP := p.expand("authentication tag", TagLen)
+	tagP := p.expand("authentication tag")
 
 	// Ratchet the transcript.
 	p.ratchet()
@@ -279,7 +279,7 @@ func (p *Protocol) MarshalBinary() (data []byte, err error) {
 // protocol transcript.
 func (p *Protocol) ratchet() {
 	// Expand a ratchet key.
-	rak := p.expand("ratchet key", p.transcript.Size())
+	rak := p.expand("ratchet key")
 
 	// Clear the transcript.
 	p.transcript.Reset()
@@ -293,16 +293,12 @@ func (p *Protocol) ratchet() {
 }
 
 // expand clones the protocol's transcript, appends an expand operation code, the label length, the label, and the
-// requested output length, and returns n (<=32) bytes of derived output.
-func (p *Protocol) expand(label string, n int) []byte {
+// requested output length, and returns 16 bytes of derived output.
+func (p *Protocol) expand(label string) []byte {
 	// Create a copy of the transcript.
 	h, err := p.transcript.(hash.Cloner).Clone() //nolint:errcheck // cannot panic
 	if err != nil {
 		panic(err)
-	}
-
-	if n > p.transcript.Size() {
-		panic("invalid expand length")
 	}
 
 	// Append the operation metadata and data to the transcript copy.
@@ -310,11 +306,11 @@ func (p *Protocol) expand(label string, n int) []byte {
 	metadata = append(metadata, opExpand)
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, []byte(label)...)
-	metadata = tuplehash.AppendRightEncode(metadata, uint64(n)*bitsPerByte) //nolint:gosec // n <= 32
+	metadata = tuplehash.AppendRightEncode(metadata, maxExpandLen*bitsPerByte)
 	_, _ = h.Write(metadata)
 
-	// Generate up to 32 bytes of output.
-	return h.Sum(nil)[:n]
+	// Generate 16 bytes of output.
+	return h.Sum(nil)[:maxExpandLen]
 }
 
 var (
@@ -343,12 +339,12 @@ const (
 	opDerive    = 0x03 // Derives pseudorandom data from the protocol's transcript.
 	opCrypt     = 0x04 // Encrypts or decrypts a plaintext value.
 	opAuthCrypt = 0x05 // Opens or seals a plaintext value.
-	opExpand    = 0x06 // Internal only. Derives up to 256 bits of PRF data from the protocol's transcript.
-	opRatchet   = 0x07 // Internal only. Replaces the protocol's transcript with 256 bits of derived data.
+	opExpand    = 0x06 // Internal only. Derives up to 128 bits of PRF data from the protocol's transcript.
+	opRatchet   = 0x07 // Internal only. Replaces the protocol's transcript with 128 bits of derived data.
 )
 
 const (
-	aes256KeyLen = 32 // The length, in bytes, of an AES-256 key.
+	maxExpandLen = 16 // The length, in bytes, of the maximum data expandable from a transcript.
 	gcmNonceLen  = 12 // The length, in bytes, of an AES-GCM nonce.
 	bitsPerByte  = 8  // The number of bits in one byte.
 )
