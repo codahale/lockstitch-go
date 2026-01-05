@@ -2,7 +2,6 @@
 package aes
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/subtle"
@@ -20,8 +19,8 @@ func CTR(key, iv, dst, src []byte) {
 		panic(err)
 	}
 
-	// For small messages, it's faster to avoid the full AES-CTR vector pipeline.
-	if len(src) < BlockSize*4 {
+	// For small messages (i.e., under 8 blocks), it's faster to avoid the full AES-CTR vector pipeline.
+	if len(src) < BlockSize*8 {
 		ctrSmall(block, iv, dst, src)
 		return
 	}
@@ -31,8 +30,9 @@ func CTR(key, iv, dst, src []byte) {
 }
 
 func ctrSmall(block cipher.Block, iv, dst, src []byte) {
-	ctr := bytes.Clone(iv)
-	tmp := make([]byte, BlockSize)
+	var ctrBuf, tmpBuf [BlockSize]byte
+	ctr, tmp := ctrBuf[:], tmpBuf[:]
+	copy(ctr, iv)
 	for {
 		// Encrypt the counter to produce a block of keystream, then XOR it with the input.
 		block.Encrypt(tmp, ctr)
