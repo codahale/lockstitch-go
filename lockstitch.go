@@ -285,8 +285,8 @@ func (p *Protocol) ratchet() {
 	p.transcript.Reset()
 
 	// Append the operation metadata and data to the transcript.
-	metadata := make([]byte, 0, 1+tuplehash.MaxLen)
-	metadata = append(metadata, opRatchet)
+	metadata := make([]byte, 1, 1+tuplehash.MaxLen)
+	metadata[0] = opRatchet
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(rak))*bitsPerByte)
 	p.transcript.Write(metadata)
 	p.transcript.Write(rak)
@@ -302,8 +302,8 @@ func (p *Protocol) expand(label string) []byte {
 	}
 
 	// Append the operation metadata and data to the transcript copy.
-	metadata := make([]byte, 0, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
-	metadata = append(metadata, opExpand)
+	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
+	metadata[0] = opExpand
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
 	metadata = tuplehash.AppendRightEncode(metadata, maxExpandLen*bitsPerByte)
