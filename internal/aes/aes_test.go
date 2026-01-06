@@ -10,16 +10,11 @@ import (
 )
 
 func FuzzCTR(f *testing.F) {
-	f.Add([]byte("ayellowsubmarine"), []byte("ayellowsubmarine"), make([]byte, 15))
-	f.Add([]byte("ayellowsubmarine"), []byte("ayellowsubmarine"), make([]byte, 31))
-	f.Add([]byte("ayellowsubmarine"), []byte("ayellowsubmarine"), make([]byte, 47))
-	f.Add([]byte("ayellowsubmarine"), []byte("ayellowsubmarine"), make([]byte, 63))
+	for _, length := range lengths {
+		f.Add([]byte("ayellowsubmarine"), []byte("ayellowsubmarine"), make([]byte, length.n))
+	}
 	f.Fuzz(func(t *testing.T, key, iv, plaintext []byte) {
-		if len(key) != 16 && len(key) != 24 && len(key) != 32 {
-			t.SkipNow()
-		}
-
-		if len(iv) != aes.BlockSize {
+		if len(key) != 16 || len(iv) != aes.BlockSize {
 			t.SkipNow()
 		}
 
