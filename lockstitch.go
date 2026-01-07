@@ -278,8 +278,8 @@ func (p *Protocol) MarshalBinary() (data []byte, err error) {
 // ratchet replaces the protocol's transcript with a ratchet operation code and a ratchet key derived from the previous
 // protocol transcript.
 func (p *Protocol) ratchet() {
-	// Expand a ratchet key.
-	rak := p.expand("ratchet key")
+	// Expand a ratchet key in place, since the transcript is immediately reset following this.
+	rak := expand(p.transcript, "ratchet key")
 
 	// Clear the transcript.
 	p.transcript.Reset()
@@ -301,16 +301,22 @@ func (p *Protocol) expand(label string) []byte {
 		panic(err)
 	}
 
+	return expand(h, label)
+}
+
+// expand appends an expand operation code, the label length, the label, and the requested output length, and returns 16
+// bytes of derived output.
+func expand(transcript hash.Hash, label string) []byte {
 	// Append the operation metadata and data to the transcript copy.
 	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
 	metadata[0] = opExpand
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
 	metadata = tuplehash.AppendRightEncode(metadata, maxExpandLen*bitsPerByte)
-	_, _ = h.Write(metadata)
+	transcript.Write(metadata)
 
 	// Generate 16 bytes of output.
-	return h.Sum(nil)[:maxExpandLen]
+	return transcript.Sum(nil)[:maxExpandLen]
 }
 
 var (
