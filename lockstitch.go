@@ -36,7 +36,7 @@ type Protocol struct {
 }
 
 // NewProtocol creates a new Protocol with the given domain separation string.
-func NewProtocol(domain string) Protocol {
+func NewProtocol(domain string) *Protocol {
 	// Initialize an empty transcript.
 	transcript := sha256.New()
 
@@ -47,7 +47,7 @@ func NewProtocol(domain string) Protocol {
 	metadata = append(metadata, domain...)
 	transcript.Write(metadata)
 
-	return Protocol{transcript: transcript, buf: metadata} //nolint:exhaustruct // noCopy should not be initialized
+	return &Protocol{transcript: transcript, buf: metadata} //nolint:exhaustruct // noCopy should not be initialized
 }
 
 // Mix ratchets the protocol's state using the given label and input.
@@ -256,13 +256,13 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 }
 
 // Clone returns an exact clone of the receiver Protocol.
-func (p *Protocol) Clone() Protocol {
+func (p *Protocol) Clone() *Protocol {
 	transcript, err := p.transcript.(hash.Cloner).Clone() //nolint:errcheck // cannot panic
 	if err != nil {
 		panic(err)
 	}
 
-	return Protocol{transcript: transcript, buf: make([]byte, initialBufLen)} //nolint:exhaustruct // noCopy should not be initialized
+	return &Protocol{transcript: transcript, buf: make([]byte, initialBufLen)} //nolint:exhaustruct // noCopy should not be initialized
 }
 
 func (p *Protocol) AppendBinary(b []byte) ([]byte, error) {
