@@ -65,6 +65,8 @@ func (p *Protocol) Mix(label string, input []byte) {
 // Derive generates pseudorandom output from the Protocol's current state, the label, and the output length, then
 // ratchets the Protocol's state with the label and output length. It appends the output to dst and returns the
 // resulting slice.
+//
+// Derive panics if n is negative or greater than 64GiB.
 func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	if n < 0 {
 		panic("invalid argument to Derive: n cannot be negative")
