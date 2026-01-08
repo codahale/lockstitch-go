@@ -30,6 +30,7 @@ var ErrInvalidCiphertext = errors.New("lockstitch: invalid ciphertext")
 // A Protocol is a stateful object providing fine-grained symmetric-key cryptographic services like hashing, message
 // authentication codes, pseudo-random functions, authenticated encryption, and more.
 type Protocol struct {
+	_          noCopy
 	transcript hash.Hash
 	buf        []byte
 }
@@ -46,7 +47,7 @@ func NewProtocol(domain string) Protocol {
 	metadata = append(metadata, domain...)
 	transcript.Write(metadata)
 
-	return Protocol{transcript: transcript, buf: metadata}
+	return Protocol{transcript: transcript, buf: metadata} //nolint:exhaustruct // noCopy should not be initialized
 }
 
 // Mix ratchets the protocol's state using the given label and input.
@@ -259,7 +260,7 @@ func (p *Protocol) Clone() Protocol {
 		panic(err)
 	}
 
-	return Protocol{transcript: transcript, buf: make([]byte, initialBufLen)}
+	return Protocol{transcript: transcript, buf: make([]byte, initialBufLen)} //nolint:exhaustruct // noCopy should not be initialized
 }
 
 func (p *Protocol) AppendBinary(b []byte) ([]byte, error) {
@@ -362,3 +363,9 @@ const (
 	bitsPerByte   = 8   // The number of bits in one byte.
 	initialBufLen = 128 // The length, in bytes, of the initial metadata buffer.
 )
+
+// noCopy is a fake lock used by -copylocks checker from `go vet`.
+type noCopy struct{}
+
+func (*noCopy) Lock()   {}
+func (*noCopy) Unlock() {}
