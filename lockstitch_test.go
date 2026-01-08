@@ -103,7 +103,9 @@ func TestKnownAnswers(t *testing.T) {
 	}
 
 	ciphertext = protocol.Seal("fifth", nil, []byte("this is an example"))
-	if got, want := hex.EncodeToString(ciphertext), "d02f72467272779eedff51ffd875d6a4c45537b38d3d56868af3acdb81c22e2fcd24"; got != want {
+	if got, want := hex.EncodeToString(
+		ciphertext,
+	), "d02f72467272779eedff51ffd875d6a4c45537b38d3d56868af3acdb81c22e2fcd24"; got != want {
 		t.Errorf("Seal('fifth') = %v, want = %v", got, want)
 	}
 
