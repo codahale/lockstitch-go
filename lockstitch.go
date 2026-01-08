@@ -23,11 +23,9 @@ import (
 // TagLen is the number of bytes added to the plaintext by the Seal operation.
 const TagLen = 16
 
-var (
-	// ErrInvalidCiphertext is returned when the ciphertext is invalid or has been decrypted with the
-	// wrong key.
-	ErrInvalidCiphertext = errors.New("lockstitch: invalid ciphertext")
-)
+// ErrInvalidCiphertext is returned when the ciphertext is invalid or has been decrypted with the
+// wrong key.
+var ErrInvalidCiphertext = errors.New("lockstitch: invalid ciphertext")
 
 // A Protocol is a stateful object providing fine-grained symmetric-key cryptographic services like hashing, message
 // authentication codes, pseudo-random functions, authenticated encryption, and more.
