@@ -31,6 +31,7 @@ var ErrInvalidCiphertext = errors.New("lockstitch: invalid ciphertext")
 // authentication codes, pseudo-random functions, authenticated encryption, and more.
 type Protocol struct {
 	transcript hash.Hash
+	buf        []byte
 }
 
 // NewProtocol creates a new Protocol with the given domain separation string.
@@ -39,19 +40,19 @@ func NewProtocol(domain string) Protocol {
 	transcript := sha256.New()
 
 	// Append the operation metadata to the transcript.
-	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(domain))
+	metadata := make([]byte, 1, max(1+tuplehash.MaxLen+len(domain), initialBufLen))
 	metadata[0] = opInit
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(domain))*bitsPerByte)
 	metadata = append(metadata, domain...)
 	transcript.Write(metadata)
 
-	return Protocol{transcript}
+	return Protocol{transcript: transcript, buf: metadata}
 }
 
 // Mix ratchets the protocol's state using the given label and input.
 func (p *Protocol) Mix(label string, input []byte) {
 	// Append the operation metadata and data to the transcript.
-	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
+	metadata := p.reuseBuf(1 + tuplehash.MaxLen + len(label) + tuplehash.MaxLen)
 	metadata[0] = opMix
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
@@ -71,7 +72,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	}
 
 	// Append the operation metadata to the transcript.
-	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
+	metadata := p.reuseBuf(1 + tuplehash.MaxLen + len(label) + tuplehash.MaxLen)
 	metadata[0] = opDerive
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
@@ -104,7 +105,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	ret, ciphertext := sliceForAppend(dst, len(plaintext))
 
 	// Append the operation metadata to the transcript.
-	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
+	metadata := p.reuseBuf(1 + tuplehash.MaxLen + len(label) + tuplehash.MaxLen)
 	metadata[0] = opCrypt
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
@@ -139,7 +140,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	ret, plaintext := sliceForAppend(dst, len(ciphertext))
 
 	// Append the operation metadata to the transcript.
-	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
+	metadata := p.reuseBuf(1 + tuplehash.MaxLen + len(label) + tuplehash.MaxLen)
 	metadata[0] = opCrypt
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
@@ -177,7 +178,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	ciphertext, tag := ciphertext[:len(plaintext)], ciphertext[len(plaintext):]
 
 	// Append the operation metadata to the transcript.
-	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
+	metadata := p.reuseBuf(1 + tuplehash.MaxLen + len(label) + tuplehash.MaxLen)
 	metadata[0] = opAuthCrypt
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
@@ -218,7 +219,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	ret, plaintext := sliceForAppend(dst, len(ciphertext))
 
 	// Append the operation metadata to the transcript.
-	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
+	metadata := p.reuseBuf(1 + tuplehash.MaxLen + len(label) + tuplehash.MaxLen)
 	metadata[0] = opAuthCrypt
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
@@ -258,7 +259,7 @@ func (p *Protocol) Clone() Protocol {
 		panic(err)
 	}
 
-	return Protocol{transcript}
+	return Protocol{transcript: transcript, buf: make([]byte, initialBufLen)}
 }
 
 func (p *Protocol) AppendBinary(b []byte) ([]byte, error) {
@@ -273,17 +274,25 @@ func (p *Protocol) MarshalBinary() (data []byte, err error) {
 	return p.transcript.(encoding.BinaryMarshaler).MarshalBinary() //nolint:errcheck // cannot panic
 }
 
+func (p *Protocol) reuseBuf(n int) []byte {
+	if cap(p.buf) < n {
+		p.buf = make([]byte, n)
+	}
+
+	return p.buf[:1]
+}
+
 // ratchet replaces the protocol's transcript with a ratchet operation code and a ratchet key derived from the previous
 // protocol transcript.
 func (p *Protocol) ratchet() {
 	// Expand a ratchet key in place, since the transcript is immediately reset following this.
-	rak := expand(p.transcript, "ratchet key")
+	rak := p.expandInPlace(p.transcript, "ratchet key")
 
 	// Clear the transcript.
 	p.transcript.Reset()
 
 	// Append the operation metadata and data to the transcript.
-	metadata := make([]byte, 1, 1+tuplehash.MaxLen)
+	metadata := p.reuseBuf(1 + tuplehash.MaxLen)
 	metadata[0] = opRatchet
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(rak))*bitsPerByte)
 	p.transcript.Write(metadata)
@@ -299,14 +308,14 @@ func (p *Protocol) expand(label string) []byte {
 		panic(err)
 	}
 
-	return expand(h, label)
+	return p.expandInPlace(h, label)
 }
 
 // expand appends an expand operation code, the label length, the label, and the requested output length, and returns 16
 // bytes of derived output.
-func expand(transcript hash.Hash, label string) []byte {
+func (p *Protocol) expandInPlace(transcript hash.Hash, label string) []byte {
 	// Append the operation metadata and data to the transcript copy.
-	metadata := make([]byte, 1, 1+tuplehash.MaxLen+len(label)+tuplehash.MaxLen)
+	metadata := p.reuseBuf(1 + tuplehash.MaxLen + len(label) + tuplehash.MaxLen)
 	metadata[0] = opExpand
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
@@ -348,7 +357,8 @@ const (
 )
 
 const (
-	maxExpandLen = 16 // The length, in bytes, of the maximum data expandable from a transcript.
-	gcmNonceLen  = 12 // The length, in bytes, of an AES-GCM nonce.
-	bitsPerByte  = 8  // The number of bits in one byte.
+	maxExpandLen  = 16  // The length, in bytes, of the maximum data expandable from a transcript.
+	gcmNonceLen   = 12  // The length, in bytes, of an AES-GCM nonce.
+	bitsPerByte   = 8   // The number of bits in one byte.
+	initialBufLen = 128 // The length, in bytes, of the initial metadata buffer.
 )
