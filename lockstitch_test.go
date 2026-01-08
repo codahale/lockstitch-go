@@ -29,7 +29,7 @@ func TestProtocol_MarshalBinary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p2 := lockstitch.NewProtocol("counter-example")
+	var p2 lockstitch.Protocol
 	if err := p2.UnmarshalBinary(state); err != nil {
 		t.Fatal(err)
 	}

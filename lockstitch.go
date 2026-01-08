@@ -266,14 +266,26 @@ func (p *Protocol) Clone() Protocol {
 }
 
 func (p *Protocol) AppendBinary(b []byte) ([]byte, error) {
+	if p.transcript == nil {
+		return nil, errors.New("lockstitch: uninitialized protocol")
+	}
 	return p.transcript.(encoding.BinaryAppender).AppendBinary(b) //nolint:errcheck // cannot panic
 }
 
 func (p *Protocol) UnmarshalBinary(data []byte) error {
+	if p.transcript != nil {
+		return errors.New("lockstitch: initialized protocol")
+	}
+
+	p.transcript = sha256.New()
+	p.buf = make([]byte, initialBufLen)
 	return p.transcript.(encoding.BinaryUnmarshaler).UnmarshalBinary(data) //nolint:errcheck // cannot panic
 }
 
 func (p *Protocol) MarshalBinary() (data []byte, err error) {
+	if p.transcript == nil {
+		return nil, errors.New("lockstitch: uninitialized protocol")
+	}
 	return p.transcript.(encoding.BinaryMarshaler).MarshalBinary() //nolint:errcheck // cannot panic
 }
 
