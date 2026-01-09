@@ -4,15 +4,26 @@ import (
 	"bytes"
 	stdlibaes "crypto/aes"
 	"crypto/cipher"
+	"crypto/sha3"
 	"testing"
 
 	"github.com/codahale/lockstitch-go/internal/aes"
 )
 
 func FuzzCTR(f *testing.F) {
+	drbg := sha3.NewSHAKE128()
+	_, _ = drbg.Write([]byte("lockstitch ctr implementation"))
+
 	for _, length := range lengths {
-		f.Add([]byte("ayellowsubmarine"), []byte("ayellowsubmarine"), make([]byte, length.n))
+		key := make([]byte, 16)
+		iv := make([]byte, aes.BlockSize)
+		plaintext := make([]byte, length.n)
+		_, _ = drbg.Read(key)
+		_, _ = drbg.Read(iv)
+		_, _ = drbg.Read(plaintext)
+		f.Add(key, iv, plaintext)
 	}
+
 	f.Fuzz(func(t *testing.T, key, iv, plaintext []byte) {
 		if len(key) != 16 || len(iv) != aes.BlockSize {
 			t.SkipNow()
