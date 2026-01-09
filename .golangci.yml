@@ -21,11 +21,11 @@ issues:
 formatters:
   enable:
     - gci # checks if code and import statements are formatted, with additional rules
-    - goimports # checks if the code and import statements are formatted according to the 'goimports' command
     - gofumpt # enforces a stricter format than 'gofmt', while being backwards compatible
 
     ## you may want to enable
     #- gofmt # checks if the code is formatted according to 'gofmt' command
+    #- goimports # checks if the code and import statements are formatted according to the 'goimports' command
     #- golines # checks if code is formatted, and fixes long lines
     #- swaggo # formats swaggo comments
 
