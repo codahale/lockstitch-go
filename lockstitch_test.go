@@ -21,6 +21,8 @@ func TestProtocol_Clone(t *testing.T) {
 }
 
 func TestProtocol_MarshalBinary(t *testing.T) {
+	t.Parallel()
+
 	p1 := lockstitch.NewProtocol("example")
 	p1.Mix("a thing", []byte("another thing"))
 
@@ -40,6 +42,8 @@ func TestProtocol_MarshalBinary(t *testing.T) {
 }
 
 func TestProtocol_AppendBinary(t *testing.T) {
+	t.Parallel()
+
 	p1 := lockstitch.NewProtocol("example")
 	p1.Mix("a thing", []byte("another thing"))
 
