@@ -17,10 +17,13 @@ import (
 func FuzzProtocolDivergence(f *testing.F) {
 	drbg := sha3.NewSHAKE128()
 	_, _ = drbg.Write([]byte("lockstitch divergence"))
-	seed := make([]byte, 1024)
-	_, _ = drbg.Read(seed)
 
-	f.Add(seed)
+	seed := make([]byte, 1024)
+	for range 10 {
+		_, _ = drbg.Read(seed)
+		f.Add(seed)
+	}
+
 	f.Fuzz(func(t *testing.T, data []byte) {
 		tp, err := fuzz.NewTypeProvider(data)
 		if err != nil {
@@ -106,10 +109,13 @@ func FuzzProtocolDivergence(f *testing.F) {
 func FuzzProtocolReversibility(f *testing.F) {
 	drbg := sha3.NewSHAKE128()
 	_, _ = drbg.Write([]byte("lockstitch reversibility"))
-	seed := make([]byte, 1024)
-	_, _ = drbg.Read(seed)
 
-	f.Add(seed)
+	seed := make([]byte, 1024)
+	for range 10 {
+		_, _ = drbg.Read(seed)
+		f.Add(seed)
+	}
+
 	f.Fuzz(func(t *testing.T, data []byte) {
 		tp, err := fuzz.NewTypeProvider(data)
 		if err != nil {
