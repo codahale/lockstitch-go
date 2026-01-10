@@ -84,7 +84,8 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	p.transcript.Write(metadata)
 
 	// Expand a PRF key.
-	prfKey := p.expand("prf key")
+	var keys [expandBufLen]byte
+	prfKey := p.expand("prf key", keys[:0])
 
 	// Expand n bytes of AES-128-CTR keystream for PRF output.
 	ret, prf := sliceForAppend(dst, n)
@@ -92,7 +93,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	aes.CTR(prfKey, zeroIV[:], prf, prf)
 
 	// Ratchet the transcript.
-	p.ratchet()
+	p.ratchet(prfKey[:0])
 
 	return ret
 }
@@ -115,8 +116,9 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	p.transcript.Write(metadata)
 
 	// Expand a data encryption key and a data authentication key from the transcript.
-	dek := p.expand("data encryption key")
-	dak := p.expand("data authentication key")
+	var keys [expandBufLen * 2]byte
+	dek := p.expand("data encryption key", keys[:0])
+	dak := p.expand("data authentication key", keys[expandBufLen:expandBufLen])
 
 	// Calculate an AES-128-GMAC authenticator of the plaintext.
 	auth := aes.GMAC(dak, zeroNonce[:], dak[:0], plaintext)
@@ -128,7 +130,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	aes.CTR(dek, zeroIV[:], ciphertext, plaintext)
 
 	// Ratchet the transcript.
-	p.ratchet()
+	p.ratchet(dek[:0])
 
 	return ret
 }
@@ -150,8 +152,9 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	p.transcript.Write(metadata)
 
 	// Expand a data encryption key, an IV, and a data authentication key from the transcript.
-	dek := p.expand("data encryption key")
-	dak := p.expand("data authentication key")
+	var keys [expandBufLen * 2]byte
+	dek := p.expand("data encryption key", keys[:0])
+	dak := p.expand("data authentication key", keys[expandBufLen:expandBufLen])
 
 	// Decrypt the ciphertext using AES-128-CTR.
 	aes.CTR(dek, zeroIV[:], plaintext, ciphertext)
@@ -163,7 +166,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	p.transcript.Write(auth)
 
 	// Ratchet the transcript.
-	p.ratchet()
+	p.ratchet(dek[:0])
 
 	return ret
 }
@@ -188,8 +191,9 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	p.transcript.Write(metadata)
 
 	// Expand a data encryption key and a data authentication key from the transcript.
-	dek := p.expand("data encryption key")
-	dak := p.expand("data authentication key")
+	var keys [expandBufLen * 2]byte
+	dek := p.expand("data encryption key", keys[:0])
+	dak := p.expand("data authentication key", keys[expandBufLen:expandBufLen])
 
 	// Calculate an AES-128-GMAC authenticator of the plaintext.
 	auth := aes.GMAC(dak, zeroNonce[:], dak[:0], plaintext)
@@ -198,13 +202,13 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	p.transcript.Write(auth)
 
 	// Expand an authentication tag.
-	copy(tag, p.expand("authentication tag"))
+	copy(tag, p.expand("authentication tag", dak[:0]))
 
 	// Encrypt the plaintext using AES-128-CTR with the tag as the IV.
 	aes.CTR(dek, tag, ciphertext, plaintext)
 
 	// Ratchet the transcript.
-	p.ratchet()
+	p.ratchet(dek[:0])
 
 	return ret
 }
@@ -229,8 +233,9 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	p.transcript.Write(metadata)
 
 	// Expand a data encryption key and a data authentication key from the transcript.
-	dek := p.expand("data encryption key")
-	dak := p.expand("data authentication key")
+	var keys [expandBufLen * 2]byte
+	dek := p.expand("data encryption key", keys[:0])
+	dak := p.expand("data authentication key", keys[expandBufLen:expandBufLen])
 
 	// Decrypt the ciphertext using AES-128-CTR with the tag as the IV.
 	aes.CTR(dek, tag, plaintext, ciphertext)
@@ -242,10 +247,9 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	p.transcript.Write(auth)
 
 	// Expand a counterfactual authentication tag.
-	tagP := p.expand("authentication tag")
-
+	tagP := p.expand("authentication tag", dak[:0])
 	// Ratchet the transcript.
-	p.ratchet()
+	p.ratchet(dek[:0])
 
 	// Compare the tag and the counterfactual tag in constant time.
 	if subtle.ConstantTimeCompare(tag, tagP) == 0 {
@@ -288,19 +292,11 @@ func (p *Protocol) MarshalBinary() (data []byte, err error) {
 	return p.transcript.(encoding.BinaryMarshaler).MarshalBinary() //nolint:errcheck // cannot panic
 }
 
-func (p *Protocol) reuseBuf(n int) []byte {
-	if cap(p.buf) < n {
-		p.buf = make([]byte, n)
-	}
-
-	return p.buf[:1]
-}
-
 // ratchet replaces the protocol's transcript with a ratchet operation code and a ratchet key derived from the previous
 // protocol transcript.
-func (p *Protocol) ratchet() {
+func (p *Protocol) ratchet(dst []byte) {
 	// Expand a ratchet key in place, since the transcript is immediately reset following this.
-	rak := p.expandInPlace(p.transcript, "ratchet key")
+	rak := p.expandInPlace(p.transcript, "ratchet key", dst)
 
 	// Clear the transcript.
 	p.transcript.Reset()
@@ -315,19 +311,19 @@ func (p *Protocol) ratchet() {
 
 // expand clones the protocol's transcript, appends an expand operation code, the label length, the label, and the
 // requested output length, and returns 16 bytes of derived output.
-func (p *Protocol) expand(label string) []byte {
+func (p *Protocol) expand(label string, dst []byte) []byte {
 	// Create a copy of the transcript.
 	h, err := p.transcript.(hash.Cloner).Clone() //nolint:errcheck // cannot panic
 	if err != nil {
 		panic(err)
 	}
 
-	return p.expandInPlace(h, label)
+	return p.expandInPlace(h, label, dst)
 }
 
 // expand appends an expand operation code, the label length, the label, and the requested output length, and returns 16
 // bytes of derived output.
-func (p *Protocol) expandInPlace(transcript hash.Hash, label string) []byte {
+func (p *Protocol) expandInPlace(transcript hash.Hash, label string, dst []byte) []byte {
 	// Append the operation metadata and data to the transcript copy.
 	metadata := p.reuseBuf(1 + tuplehash.MaxLen + len(label) + tuplehash.MaxLen)
 	metadata[0] = opExpand
@@ -337,7 +333,15 @@ func (p *Protocol) expandInPlace(transcript hash.Hash, label string) []byte {
 	transcript.Write(metadata)
 
 	// Generate 16 bytes of output.
-	return transcript.Sum(nil)[:maxExpandLen]
+	return transcript.Sum(dst)[:maxExpandLen]
+}
+
+func (p *Protocol) reuseBuf(n int) []byte {
+	if cap(p.buf) < n {
+		p.buf = make([]byte, n)
+	}
+
+	return p.buf[:1]
 }
 
 var (
@@ -377,6 +381,7 @@ const (
 	gcmNonceLen   = 12  // The length, in bytes, of an AES-GCM nonce.
 	bitsPerByte   = 8   // The number of bits in one byte.
 	initialBufLen = 128 // The length, in bytes, of the initial metadata buffer.
+	expandBufLen  = 32  // The length, in bytes, required of an expand buffer.
 )
 
 // noCopy is a fake lock used by -copylocks checker from `go vet`.
