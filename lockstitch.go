@@ -89,7 +89,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	// Expand n bytes of AES-128-CTR keystream for PRF output.
 	ret, prf := sliceForAppend(dst, n)
 	clear(prf) // There's no way to get just the keystream from stdlib's CTR mode, so we ensure the input is zeroed.
-	aes.CTR(prfKey, make([]byte, aes.BlockSize), prf, prf)
+	aes.CTR(prfKey, zeroIV[:], prf, prf)
 
 	// Ratchet the transcript.
 	p.ratchet()
@@ -119,13 +119,13 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	dak := p.expand("data authentication key")
 
 	// Calculate an AES-128-GMAC authenticator of the plaintext.
-	auth := aes.GMAC(dak, make([]byte, gcmNonceLen), dak[:0], plaintext)
+	auth := aes.GMAC(dak, zeroNonce[:], dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
 
 	// Encrypt the plaintext using AES-128-CTR.
-	aes.CTR(dek, make([]byte, aes.BlockSize), ciphertext, plaintext)
+	aes.CTR(dek, zeroIV[:], ciphertext, plaintext)
 
 	// Ratchet the transcript.
 	p.ratchet()
@@ -154,10 +154,10 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	dak := p.expand("data authentication key")
 
 	// Decrypt the ciphertext using AES-128-CTR.
-	aes.CTR(dek, make([]byte, aes.BlockSize), plaintext, ciphertext)
+	aes.CTR(dek, zeroIV[:], plaintext, ciphertext)
 
 	// Calculate an AES-128-GMAC authenticator of the plaintext.
-	auth := aes.GMAC(dak, make([]byte, gcmNonceLen), dak[:0], plaintext)
+	auth := aes.GMAC(dak, zeroNonce[:], dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
@@ -192,7 +192,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	dak := p.expand("data authentication key")
 
 	// Calculate an AES-128-GMAC authenticator of the plaintext.
-	auth := aes.GMAC(dak, make([]byte, gcmNonceLen), dak[:0], plaintext)
+	auth := aes.GMAC(dak, zeroNonce[:], dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
@@ -236,7 +236,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	aes.CTR(dek, tag, plaintext, ciphertext)
 
 	// Calculate an AES-128-GMAC authenticator of the plaintext.
-	auth := aes.GMAC(dak, make([]byte, gcmNonceLen), dak[:0], plaintext)
+	auth := aes.GMAC(dak, zeroNonce[:], dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
@@ -355,6 +355,12 @@ func sliceForAppend(in []byte, n int) (head, tail []byte) {
 	tail = head[len(in):]
 	return head, tail
 }
+
+//nolint:gochecknoglobals // the whole point of this is that it's global
+var (
+	zeroIV    [aes.BlockSize]byte
+	zeroNonce [gcmNonceLen]byte
+)
 
 const (
 	opInit      = 0x01 // Initializes a protocol with a domain separation string.
