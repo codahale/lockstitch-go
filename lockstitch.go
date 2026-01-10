@@ -87,9 +87,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 
 	// Expand n bytes of AES-128-CTR keystream for PRF output.
 	ret, prf := sliceForAppend(dst, n)
-	for i := range prf {
-		prf[i] = 0 // There's no way to get just the keystream from stdlib's CTR mode, so we ensure the input is zeroed.
-	}
+	clear(prf) // There's no way to get just the keystream from stdlib's CTR mode, so we ensure the input is zeroed.
 	aes.CTR(prfKey, make([]byte, aes.BlockSize), prf, prf)
 
 	// Ratchet the transcript.
