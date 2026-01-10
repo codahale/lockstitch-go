@@ -15,6 +15,7 @@ import (
 	"encoding"
 	"errors"
 	"hash"
+	"slices"
 
 	"github.com/codahale/lockstitch-go/internal/aes"
 	"github.com/codahale/lockstitch-go/internal/tuplehash"
@@ -349,12 +350,8 @@ var (
 // followed by that many bytes and a second slice that aliases into it and contains only the extra bytes. If the
 // original slice has sufficient capacity, then no allocation is performed.
 func sliceForAppend(in []byte, n int) (head, tail []byte) {
-	if total := len(in) + n; cap(in) >= total {
-		head = in[:total]
-	} else {
-		head = make([]byte, total)
-		copy(head, in)
-	}
+	head = slices.Grow(in, n)
+	head = head[:len(in)+n]
 	tail = head[len(in):]
 	return head, tail
 }
