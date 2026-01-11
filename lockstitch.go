@@ -248,11 +248,13 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 
 	// Expand a counterfactual authentication tag.
 	tagP := p.expand("authentication tag", dak[:0])
+
 	// Ratchet the transcript.
 	p.ratchet(dek[:0])
 
 	// Compare the tag and the counterfactual tag in constant time.
 	if subtle.ConstantTimeCompare(tag, tagP) == 0 {
+		clear(plaintext)
 		return nil, ErrInvalidCiphertext
 	}
 	return ret, nil

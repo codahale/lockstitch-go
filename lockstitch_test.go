@@ -89,6 +89,25 @@ func TestDeriveArgValidation(t *testing.T) {
 	p.Derive("test", nil, -200)
 }
 
+func TestOpenUnauthenticatedPlaintext(t *testing.T) {
+	t.Parallel()
+
+	p1 := lockstitch.NewProtocol("example")
+	p1.Mix("key", []byte("I'm a key."))
+	plaintext := []byte("I'm a message.")
+	ciphertext := p1.Seal("message", nil, plaintext)
+
+	ciphertext[0] ^= 1
+
+	p2 := lockstitch.NewProtocol("example")
+	p2.Mix("key", []byte("I'm a key."))
+	_, _ = p2.Open("message", ciphertext[:0], ciphertext)
+
+	if got, want := ciphertext[:len(plaintext)], make([]byte, len(plaintext)); !bytes.Equal(got, want) {
+		t.Fatalf("Open(invalid) left reachable unauthenticated plaintext: %x vs %x", got, plaintext)
+	}
+}
+
 func TestKnownAnswers(t *testing.T) {
 	t.Parallel()
 
