@@ -202,7 +202,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	p.transcript.Write(auth)
 
 	// Expand an authentication tag.
-	copy(tag, p.expand("authentication tag", dak[:0]))
+	copy(tag, p.expand("authentication tag", auth[:0]))
 
 	// Encrypt the plaintext using AES-128-CTR with the tag as the IV.
 	aes.CTR(dek, tag, ciphertext, plaintext)
@@ -247,7 +247,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	p.transcript.Write(auth)
 
 	// Expand a counterfactual authentication tag.
-	tagP := p.expand("authentication tag", dak[:0])
+	tagP := p.expand("authentication tag", auth[:0])
 
 	// Ratchet the transcript.
 	p.ratchet(dek[:0])
