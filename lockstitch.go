@@ -47,6 +47,7 @@ func NewProtocol(domain string) *Protocol {
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(domain))*bitsPerByte)
 	metadata = append(metadata, domain...)
 	transcript.Write(metadata)
+	clear(metadata)
 
 	return &Protocol{transcript: transcript, buf: metadata} //nolint:exhaustruct // noCopy should not be initialized
 }
@@ -61,6 +62,7 @@ func (p *Protocol) Mix(label string, input []byte) {
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(input))*bitsPerByte)
 	p.transcript.Write(metadata)
 	p.transcript.Write(input)
+	clear(metadata)
 }
 
 // Derive generates pseudorandom output from the Protocol's current state, the label, and the output length, then
@@ -82,6 +84,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	metadata = append(metadata, label...)
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(n)*bitsPerByte)
 	p.transcript.Write(metadata)
+	clear(metadata)
 
 	// Expand a PRF key.
 	var keys [expandBufLen]byte
@@ -114,6 +117,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	metadata = append(metadata, label...)
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(plaintext))*bitsPerByte)
 	p.transcript.Write(metadata)
+	clear(metadata)
 
 	// Expand a data encryption key and a data authentication key from the transcript.
 	var keys [expandBufLen * 2]byte
@@ -150,6 +154,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	metadata = append(metadata, label...)
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(plaintext))*bitsPerByte)
 	p.transcript.Write(metadata)
+	clear(metadata)
 
 	// Expand a data encryption key, an IV, and a data authentication key from the transcript.
 	var keys [expandBufLen * 2]byte
@@ -189,6 +194,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	metadata = append(metadata, label...)
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(plaintext))*bitsPerByte)
 	p.transcript.Write(metadata)
+	clear(metadata)
 
 	// Expand a data encryption key and a data authentication key from the transcript.
 	var keys [expandBufLen * 2]byte
@@ -231,6 +237,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	metadata = append(metadata, label...)
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(plaintext))*bitsPerByte)
 	p.transcript.Write(metadata)
+	clear(metadata)
 
 	// Expand a data encryption key and a data authentication key from the transcript.
 	var keys [expandBufLen * 2]byte
