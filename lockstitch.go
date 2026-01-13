@@ -21,8 +21,12 @@ import (
 	"github.com/codahale/lockstitch-go/internal/tuplehash"
 )
 
-// TagLen is the number of bytes added to the plaintext by the Seal operation.
-const TagLen = 16
+const (
+	// TagLen is the number of bytes added to the plaintext by the Seal operation.
+	TagLen = 16
+	// MaxDeriveLen is the maximum number of bytes which can be produced by a single Protocol.Derive operation.
+	MaxDeriveLen = 64 * 1024 * 1024 * 1024 // 64 GiB
+)
 
 // ErrInvalidCiphertext is returned when the ciphertext is invalid or has been decrypted with the
 // wrong key.
@@ -74,11 +78,11 @@ func (p *Protocol) Mix(label string, input []byte) {
 // ratchets the Protocol's state with the label and output length. It appends the output to dst and returns the
 // resulting slice.
 //
-// Derive panics if n is negative or greater than 64GiB to strictly avoid birthday-bound attacks.
+// Derive panics if n is negative or greater than MaxDeriveLen to strictly avoid birthday-bound attacks.
 func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	if n < 0 {
 		panic("invalid argument to Derive: n cannot be negative")
-	} else if uint64(n) > 64*1024*1024*1024 {
+	} else if uint64(n) > MaxDeriveLen {
 		panic("invalid argument to Derive: n must be <= 64GiB")
 	}
 

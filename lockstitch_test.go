@@ -134,3 +134,39 @@ func TestKnownAnswers(t *testing.T) {
 		t.Errorf("Derive('sixth') = %v, want = %v", got, want)
 	}
 }
+
+func TestProtocol_Derive_MaxBytes(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("Derive(MaxDeriveLen+1) should have failed")
+		}
+	}()
+
+	p := lockstitch.NewProtocol("example")
+	p.Derive("test", nil, lockstitch.MaxDeriveLen+1)
+}
+
+func TestProtocol_Uninitialized(t *testing.T) {
+	t.Parallel()
+
+	var p lockstitch.Protocol
+
+	if _, err := p.AppendBinary(nil); err == nil {
+		t.Error("AppendBinary(uninitialized) should have failed")
+	}
+
+	if _, err := p.MarshalBinary(); err == nil {
+		t.Error("MarshalBinary(uninitialized) should have failed")
+	}
+}
+
+func TestProtocol_Initialized_Unmarshal(t *testing.T) {
+	t.Parallel()
+
+	p := lockstitch.NewProtocol("example")
+	if err := p.UnmarshalBinary([]byte{}); err == nil {
+		t.Error("UnmarshalBinary(initialized) should have failed")
+	}
+}
