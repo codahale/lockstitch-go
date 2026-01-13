@@ -331,6 +331,7 @@ func (p *Protocol) ratchet(dst []byte) {
 	metadata[0] = opRatchet
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(rak))*bitsPerByte)
 	p.transcript.Write(metadata)
+	clear(metadata)
 	p.transcript.Write(rak)
 }
 
@@ -356,6 +357,7 @@ func (p *Protocol) expandInPlace(transcript hash.Hash, label string, dst []byte)
 	metadata = append(metadata, label...)
 	metadata = tuplehash.AppendRightEncode(metadata, maxExpandSize*bitsPerByte)
 	transcript.Write(metadata)
+	clear(metadata)
 
 	// Generate 16 bytes of output.
 	return transcript.Sum(dst)[:maxExpandSize]
