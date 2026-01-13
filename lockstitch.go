@@ -294,7 +294,7 @@ func (p *Protocol) Clone() *Protocol {
 		panic(err)
 	}
 
-	return &Protocol{transcript: transcript, metadataBuf: make([]byte, initialBufSize)} //nolint:exhaustruct // noCopy should not be initialized
+	return &Protocol{transcript: transcript, metadataBuf: make([]byte, len(p.metadataBuf))} //nolint:exhaustruct // noCopy cannot be initialized
 }
 
 func (p *Protocol) AppendBinary(b []byte) ([]byte, error) {
