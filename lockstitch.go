@@ -133,7 +133,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	dak := p.expand("data authentication key", keys[expandBufLen:expandBufLen])
 
 	// Calculate an AES-128-GMAC authenticator of the plaintext.
-	auth := aes.GMAC(dak, zeroNonce[:], dak[:0], plaintext)
+	auth := aes.GMAC(dak, dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
@@ -177,7 +177,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	aes.CTR(dek, zeroIV[:], plaintext, ciphertext)
 
 	// Calculate an AES-128-GMAC authenticator of the plaintext.
-	auth := aes.GMAC(dak, zeroNonce[:], dak[:0], plaintext)
+	auth := aes.GMAC(dak, dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
@@ -214,7 +214,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	dak := p.expand("data authentication key", keys[expandBufLen:expandBufLen])
 
 	// Calculate an AES-128-GMAC authenticator of the plaintext.
-	auth := aes.GMAC(dak, zeroNonce[:], dak[:0], plaintext)
+	auth := aes.GMAC(dak, dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
@@ -260,7 +260,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	aes.CTR(dek, tag, plaintext, ciphertext)
 
 	// Calculate an AES-128-GMAC authenticator of the plaintext.
-	auth := aes.GMAC(dak, zeroNonce[:], dak[:0], plaintext)
+	auth := aes.GMAC(dak, dak[:0], plaintext)
 
 	// Append the authenticator to the transcript.
 	p.transcript.Write(auth)
@@ -382,10 +382,7 @@ func sliceForAppend(in []byte, n int) (head, tail []byte) {
 }
 
 //nolint:gochecknoglobals // the whole point of this is that it's global
-var (
-	zeroIV    [aes.BlockSize]byte
-	zeroNonce [gcmNonceLen]byte
-)
+var zeroIV [aes.BlockSize]byte
 
 const (
 	opInit      = 0x01 // Initializes a protocol with a domain separation string.
@@ -399,7 +396,6 @@ const (
 
 const (
 	maxExpandLen  = 16  // The length, in bytes, of the maximum data expandable from a transcript.
-	gcmNonceLen   = 12  // The length, in bytes, of an AES-GCM nonce.
 	bitsPerByte   = 8   // The number of bits in one byte.
 	initialBufLen = 128 // The length, in bytes, of the initial metadata buffer.
 	expandBufLen  = 32  // The length, in bytes, required of an expand buffer.

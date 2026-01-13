@@ -60,7 +60,7 @@ func ctrSmall(block cipher.Block, iv, dst, src []byte) {
 
 // GMAC implements AES-GMAC, which is the same thing as AES-GCM, but passing the message as the authenticated data and
 // an empty string as the plaintext.
-func GMAC(key, nonce, dst, src []byte) []byte {
+func GMAC(key, dst, src []byte) []byte {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		panic(err)
@@ -71,5 +71,7 @@ func GMAC(key, nonce, dst, src []byte) []byte {
 		panic(err)
 	}
 
-	return gcm.Seal(dst, nonce, nil, src)
+	return gcm.Seal(dst, zeroNonce[:], nil, src)
 }
+
+var zeroNonce [12]byte //nolint:gochecknoglobals // perf optimization
