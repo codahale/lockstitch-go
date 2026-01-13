@@ -140,12 +140,12 @@ func TestProtocol_Derive_MaxBytes(t *testing.T) {
 
 	defer func() {
 		if r := recover(); r == nil {
-			t.Error("Derive(MaxDeriveLen+1) should have failed")
+			t.Error("Derive(MaxDeriveSize+1) should have failed")
 		}
 	}()
 
 	p := lockstitch.NewProtocol("example")
-	p.Derive("test", nil, lockstitch.MaxDeriveLen+1)
+	p.Derive("test", nil, lockstitch.MaxDeriveSize+1)
 }
 
 func TestProtocol_Uninitialized(t *testing.T) {

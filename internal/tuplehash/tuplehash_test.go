@@ -76,7 +76,7 @@ func FuzzRightEncode(f *testing.F) {
 }
 
 func BenchmarkLeftEncode(b *testing.B) {
-	out := make([]byte, tuplehash.MaxLen)
+	out := make([]byte, tuplehash.MaxSize)
 
 	b.ReportAllocs()
 	for b.Loop() {
@@ -85,7 +85,7 @@ func BenchmarkLeftEncode(b *testing.B) {
 }
 
 func BenchmarkRightEncode(b *testing.B) {
-	out := make([]byte, tuplehash.MaxLen)
+	out := make([]byte, tuplehash.MaxSize)
 
 	b.ReportAllocs()
 	for b.Loop() {

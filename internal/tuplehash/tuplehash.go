@@ -7,8 +7,8 @@ import (
 	"math/bits"
 )
 
-// MaxLen is the length, in bytes, of the largest encoded integer.
-const MaxLen = 9
+// MaxSize is the length, in bytes, of the largest encoded integer.
+const MaxSize = 9
 
 // AppendLeftEncode encodes an integer value using NIST SP 800-185's left_encode and appends it to b.
 func AppendLeftEncode(b []byte, value uint64) []byte {

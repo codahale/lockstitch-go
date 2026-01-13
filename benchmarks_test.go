@@ -60,7 +60,7 @@ func BenchmarkDecrypt(b *testing.B) {
 func BenchmarkSeal(b *testing.B) {
 	p := lockstitch.NewProtocol("seal")
 	label := "label"
-	output := make([]byte, 32+lockstitch.TagLen)
+	output := make([]byte, 32+lockstitch.TagSize)
 
 	b.ReportAllocs()
 	for b.Loop() {
@@ -157,7 +157,7 @@ func BenchmarkAEAD(b *testing.B) {
 
 	for _, length := range lengths {
 		b.Run(length.name, func(b *testing.B) {
-			output := make([]byte, length.n+lockstitch.TagLen)
+			output := make([]byte, length.n+lockstitch.TagSize)
 			b.ReportAllocs()
 			b.SetBytes(int64(len(output)))
 			for b.Loop() {

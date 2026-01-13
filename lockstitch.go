@@ -22,10 +22,10 @@ import (
 )
 
 const (
-	// TagLen is the number of bytes added to the plaintext by the Seal operation.
-	TagLen = 16
-	// MaxDeriveLen is the maximum number of bytes which can be produced by a single Protocol.Derive operation.
-	MaxDeriveLen = 64 * 1024 * 1024 * 1024 // 64 GiB
+	// TagSize is the number of bytes added to the plaintext by the Seal operation.
+	TagSize = 16
+	// MaxDeriveSize is the maximum number of bytes which can be produced by a single Protocol.Derive operation.
+	MaxDeriveSize = 64 * 1024 * 1024 * 1024 // 64 GiB
 )
 
 // ErrInvalidCiphertext is returned when the ciphertext is invalid or has been decrypted with the
@@ -51,7 +51,7 @@ func NewProtocol(domain string) *Protocol {
 	transcript := sha256.New()
 
 	// Append the operation metadata to the transcript.
-	metadata := make([]byte, 1, max(1+tuplehash.MaxLen+len(domain), initialBufLen))
+	metadata := make([]byte, 1, max(1+tuplehash.MaxSize+len(domain), initialBufSize))
 	metadata[0] = opInit
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(domain))*bitsPerByte)
 	metadata = append(metadata, domain...)
@@ -64,7 +64,7 @@ func NewProtocol(domain string) *Protocol {
 // Mix ratchets the protocol's state using the given label and input.
 func (p *Protocol) Mix(label string, input []byte) {
 	// Append the operation metadata and data to the transcript.
-	metadata := p.reuseBuf(1 + tuplehash.MaxLen + len(label) + tuplehash.MaxLen)
+	metadata := p.reuseBuf(1 + tuplehash.MaxSize + len(label) + tuplehash.MaxSize)
 	metadata[0] = opMix
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
@@ -78,16 +78,16 @@ func (p *Protocol) Mix(label string, input []byte) {
 // ratchets the Protocol's state with the label and output length. It appends the output to dst and returns the
 // resulting slice.
 //
-// Derive panics if n is negative or greater than MaxDeriveLen to strictly avoid birthday-bound attacks.
+// Derive panics if n is negative or greater than MaxDeriveSize to strictly avoid birthday-bound attacks.
 func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	if n < 0 {
 		panic("invalid argument to Derive: n cannot be negative")
-	} else if uint64(n) > MaxDeriveLen {
+	} else if uint64(n) > MaxDeriveSize {
 		panic("invalid argument to Derive: n must be <= 64GiB")
 	}
 
 	// Append the operation metadata to the transcript.
-	metadata := p.reuseBuf(1 + tuplehash.MaxLen + len(label) + tuplehash.MaxLen)
+	metadata := p.reuseBuf(1 + tuplehash.MaxSize + len(label) + tuplehash.MaxSize)
 	metadata[0] = opDerive
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
@@ -96,7 +96,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	clear(metadata)
 
 	// Expand a PRF key.
-	var keys [expandBufLen]byte
+	var keys [expandBufSize]byte
 	prfKey := p.expand("prf key", keys[:0])
 
 	// Expand n bytes of AES-128-CTR keystream for PRF output.
@@ -123,7 +123,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	ret, ciphertext := sliceForAppend(dst, len(plaintext))
 
 	// Append the operation metadata to the transcript.
-	metadata := p.reuseBuf(1 + tuplehash.MaxLen + len(label) + tuplehash.MaxLen)
+	metadata := p.reuseBuf(1 + tuplehash.MaxSize + len(label) + tuplehash.MaxSize)
 	metadata[0] = opCrypt
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
@@ -132,9 +132,9 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	clear(metadata)
 
 	// Expand a data encryption key and a data authentication key from the transcript.
-	var keys [expandBufLen * 2]byte
+	var keys [expandBufSize * 2]byte
 	dek := p.expand("data encryption key", keys[:0])
-	dak := p.expand("data authentication key", keys[expandBufLen:expandBufLen])
+	dak := p.expand("data authentication key", keys[expandBufSize:expandBufSize])
 
 	// Calculate an AES-128-GMAC authenticator of the plaintext.
 	auth := aes.GMAC(dak, dak[:0], plaintext)
@@ -164,7 +164,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	ret, plaintext := sliceForAppend(dst, len(ciphertext))
 
 	// Append the operation metadata to the transcript.
-	metadata := p.reuseBuf(1 + tuplehash.MaxLen + len(label) + tuplehash.MaxLen)
+	metadata := p.reuseBuf(1 + tuplehash.MaxSize + len(label) + tuplehash.MaxSize)
 	metadata[0] = opCrypt
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
@@ -173,9 +173,9 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	clear(metadata)
 
 	// Expand a data encryption key, an IV, and a data authentication key from the transcript.
-	var keys [expandBufLen * 2]byte
+	var keys [expandBufSize * 2]byte
 	dek := p.expand("data encryption key", keys[:0])
-	dak := p.expand("data authentication key", keys[expandBufLen:expandBufLen])
+	dak := p.expand("data authentication key", keys[expandBufSize:expandBufSize])
 
 	// Decrypt the ciphertext using AES-128-CTR.
 	aes.CTR(dek, zeroIV[:], plaintext, ciphertext)
@@ -193,18 +193,18 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 }
 
 // Seal encrypts the given plaintext using the protocol's current state as the key, appending an authentication tag of
-// TagLen bytes, then ratchets the protocol's state using the label and input. It appends the ciphertext and
+// TagSize bytes, then ratchets the protocol's state using the label and input. It appends the ciphertext and
 // authentication tag to dst and returns the resulting slice.
 //
 // To reuse plaintext's storage for the encrypted output, use plaintext[:0] as dst. Otherwise, the remaining capacity of
 // dst must not overlap plaintext.
 func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	// Allocate a slice for the ciphertext and split it between ciphertext and tag.
-	ret, ciphertext := sliceForAppend(dst, len(plaintext)+TagLen)
+	ret, ciphertext := sliceForAppend(dst, len(plaintext)+TagSize)
 	ciphertext, tag := ciphertext[:len(plaintext)], ciphertext[len(plaintext):]
 
 	// Append the operation metadata to the transcript.
-	metadata := p.reuseBuf(1 + tuplehash.MaxLen + len(label) + tuplehash.MaxLen)
+	metadata := p.reuseBuf(1 + tuplehash.MaxSize + len(label) + tuplehash.MaxSize)
 	metadata[0] = opAuthCrypt
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
@@ -213,9 +213,9 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	clear(metadata)
 
 	// Expand a data encryption key and a data authentication key from the transcript.
-	var keys [expandBufLen * 2]byte
+	var keys [expandBufSize * 2]byte
 	dek := p.expand("data encryption key", keys[:0])
-	dak := p.expand("data authentication key", keys[expandBufLen:expandBufLen])
+	dak := p.expand("data authentication key", keys[expandBufSize:expandBufSize])
 
 	// Calculate an AES-128-GMAC authenticator of the plaintext.
 	auth := aes.GMAC(dak, dak[:0], plaintext)
@@ -235,7 +235,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	return ret
 }
 
-// Open decrypts the given slice in place using the protocol's current state as the key, verifying the final TagLen
+// Open decrypts the given slice in place using the protocol's current state as the key, verifying the final TagSize
 // bytes as an authentication tag. If the ciphertext is authentic, it appends the plaintext to dst and returns the
 // resulting slice; otherwise, ErrInvalidCiphertext is returned.
 //
@@ -243,11 +243,11 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 // of dst must not overlap ciphertext.
 func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	// Split the ciphertext between ciphertext and tag. Allocate slice for plaintext.
-	ciphertext, tag := ciphertext[:len(ciphertext)-TagLen], ciphertext[len(ciphertext)-TagLen:]
+	ciphertext, tag := ciphertext[:len(ciphertext)-TagSize], ciphertext[len(ciphertext)-TagSize:]
 	ret, plaintext := sliceForAppend(dst, len(ciphertext))
 
 	// Append the operation metadata to the transcript.
-	metadata := p.reuseBuf(1 + tuplehash.MaxLen + len(label) + tuplehash.MaxLen)
+	metadata := p.reuseBuf(1 + tuplehash.MaxSize + len(label) + tuplehash.MaxSize)
 	metadata[0] = opAuthCrypt
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
@@ -256,9 +256,9 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	clear(metadata)
 
 	// Expand a data encryption key and a data authentication key from the transcript.
-	var keys [expandBufLen * 2]byte
+	var keys [expandBufSize * 2]byte
 	dek := p.expand("data encryption key", keys[:0])
-	dak := p.expand("data authentication key", keys[expandBufLen:expandBufLen])
+	dak := p.expand("data authentication key", keys[expandBufSize:expandBufSize])
 
 	// Decrypt the ciphertext using AES-128-CTR with the tag as the IV.
 	aes.CTR(dek, tag, plaintext, ciphertext)
@@ -290,7 +290,7 @@ func (p *Protocol) Clone() *Protocol {
 		panic(err)
 	}
 
-	return &Protocol{transcript: transcript, buf: make([]byte, initialBufLen)} //nolint:exhaustruct // noCopy should not be initialized
+	return &Protocol{transcript: transcript, buf: make([]byte, initialBufSize)} //nolint:exhaustruct // noCopy should not be initialized
 }
 
 func (p *Protocol) AppendBinary(b []byte) ([]byte, error) {
@@ -306,7 +306,7 @@ func (p *Protocol) UnmarshalBinary(data []byte) error {
 	}
 
 	p.transcript = sha256.New()
-	p.buf = make([]byte, initialBufLen)
+	p.buf = make([]byte, initialBufSize)
 	return p.transcript.(encoding.BinaryUnmarshaler).UnmarshalBinary(data) //nolint:errcheck // cannot panic
 }
 
@@ -327,7 +327,7 @@ func (p *Protocol) ratchet(dst []byte) {
 	p.transcript.Reset()
 
 	// Append the operation metadata and data to the transcript.
-	metadata := p.reuseBuf(1 + tuplehash.MaxLen)
+	metadata := p.reuseBuf(1 + tuplehash.MaxSize)
 	metadata[0] = opRatchet
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(rak))*bitsPerByte)
 	p.transcript.Write(metadata)
@@ -350,15 +350,15 @@ func (p *Protocol) expand(label string, dst []byte) []byte {
 // bytes of derived output.
 func (p *Protocol) expandInPlace(transcript hash.Hash, label string, dst []byte) []byte {
 	// Append the operation metadata and data to the transcript copy.
-	metadata := p.reuseBuf(1 + tuplehash.MaxLen + len(label) + tuplehash.MaxLen)
+	metadata := p.reuseBuf(1 + tuplehash.MaxSize + len(label) + tuplehash.MaxSize)
 	metadata[0] = opExpand
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
-	metadata = tuplehash.AppendRightEncode(metadata, maxExpandLen*bitsPerByte)
+	metadata = tuplehash.AppendRightEncode(metadata, maxExpandSize*bitsPerByte)
 	transcript.Write(metadata)
 
 	// Generate 16 bytes of output.
-	return transcript.Sum(dst)[:maxExpandLen]
+	return transcript.Sum(dst)[:maxExpandSize]
 }
 
 func (p *Protocol) reuseBuf(n int) []byte {
@@ -399,10 +399,10 @@ const (
 )
 
 const (
-	maxExpandLen  = 16  // The length, in bytes, of the maximum data expandable from a transcript.
-	bitsPerByte   = 8   // The number of bits in one byte.
-	initialBufLen = 128 // The length, in bytes, of the initial metadata buffer.
-	expandBufLen  = 32  // The length, in bytes, required of an expand buffer.
+	maxExpandSize  = 16  // The length, in bytes, of the maximum data expandable from a transcript.
+	bitsPerByte    = 8   // The number of bits in one byte.
+	initialBufSize = 128 // The length, in bytes, of the initial metadata buffer.
+	expandBufSize  = 32  // The length, in bytes, required of an expand buffer.
 )
 
 // noCopy is a fake lock used by -copylocks checker from `go vet`.
