@@ -36,10 +36,12 @@ Using these operations, one can construct a wide variety of symmetric-key constr
 
 ## Additional Information
 
+For more information on the usage of Lockstitch, see the godoc.
+
 For more information on the design of Lockstitch, see [`design.md`](design.md).
 
 ## License
 
-Copyright © 2025 Coda Hale
+Copyright © 2026 Coda Hale
 
 Distributed under the Apache License 2.0 or MIT License.

@@ -12,7 +12,7 @@ const BlockSize = aes.BlockSize
 
 // CTR implements AES-CTR with a specialized implementation for inputs shorter than 64 bytes. The standard library
 // implementation of AES-CTR uses SIMD instructions for high throughput, which comes with a latency penalty for small
-// inputs.
+// inputs. This implementation avoids that penalty by using a scalar implementation for short inputs.
 func CTR(key, iv, dst, src []byte) {
 	block, err := aes.NewCipher(key)
 	if err != nil {

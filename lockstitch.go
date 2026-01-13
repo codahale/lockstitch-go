@@ -30,6 +30,8 @@ var ErrInvalidCiphertext = errors.New("lockstitch: invalid ciphertext")
 
 // A Protocol is a stateful object providing fine-grained symmetric-key cryptographic services like hashing, message
 // authentication codes, pseudo-random functions, authenticated encryption, and more.
+//
+// Protocol instances are not concurrent-safe.
 type Protocol struct {
 	_          noCopy
 	transcript hash.Hash
@@ -37,6 +39,9 @@ type Protocol struct {
 }
 
 // NewProtocol creates a new Protocol with the given domain separation string.
+//
+// The domain separation string should be unique to the application and specific protocol. It should not contain dynamic
+// data like timestamps or user IDs. A good format is "application-name.protocol-name".
 func NewProtocol(domain string) *Protocol {
 	// Initialize an empty transcript.
 	transcript := sha256.New()
@@ -69,7 +74,7 @@ func (p *Protocol) Mix(label string, input []byte) {
 // ratchets the Protocol's state with the label and output length. It appends the output to dst and returns the
 // resulting slice.
 //
-// Derive panics if n is negative or greater than 64GiB.
+// Derive panics if n is negative or greater than 64GiB to strictly avoid birthday-bound attacks.
 func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	if n < 0 {
 		panic("invalid argument to Derive: n cannot be negative")
@@ -103,6 +108,9 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 
 // Encrypt encrypts the plaintext using the protocol's current state as the key, then ratchets the protocol's state
 // using the label and input. It appends the ciphertext to dst and returns the resulting slice.
+//
+// Encrypt provides confidentiality but not authenticity. If you need to ensure the ciphertext hasn't been modified, use
+// Seal instead.
 //
 // To reuse plaintext's storage for the encrypted output, use plaintext[:0] as dst. Otherwise, the remaining capacity of
 // dst must not overlap plaintext.
@@ -140,9 +148,13 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 }
 
 // Decrypt decrypts the given ciphertext using the protocol's current state as the key, then ratchets the protocol's
-// state using the label and input. It appends the plaintext to dst and returns the resulting slice. To reuse
-// ciphertext's storage for the decrypted output, use ciphertext[:0] as dst. Otherwise, the remaining capacity of dst
-// must not overlap ciphertext.
+// state using the label and input. It appends the plaintext to dst and returns the resulting slice.
+//
+// Decrypt provides confidentiality but not authenticity. If you need to ensure the ciphertext hasn't been modified, use
+// Open instead.
+//
+// To reuse ciphertext's storage for the decrypted output, use ciphertext[:0] as dst. Otherwise, the remaining capacity
+// of dst must not overlap ciphertext.
 func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	// Allocate a slice for the plaintext.
 	ret, plaintext := sliceForAppend(dst, len(ciphertext))
@@ -267,7 +279,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	return ret, nil
 }
 
-// Clone returns an exact clone of the receiver Protocol.
+// Clone returns an exact, deep copy of the receiver Protocol. The cloned protocol shares no state with the original.
 func (p *Protocol) Clone() *Protocol {
 	transcript, err := p.transcript.(hash.Cloner).Clone() //nolint:errcheck // cannot panic
 	if err != nil {
