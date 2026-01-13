@@ -15,7 +15,9 @@ import (
 	"encoding"
 	"errors"
 	"hash"
+	"math/bits"
 	"slices"
+	"strconv"
 
 	"github.com/codahale/lockstitch-go/internal/aes"
 	"github.com/codahale/lockstitch-go/internal/tuplehash"
@@ -37,9 +39,9 @@ var ErrInvalidCiphertext = errors.New("lockstitch: invalid ciphertext")
 //
 // Protocol instances are not concurrent-safe.
 type Protocol struct {
-	_          noCopy
-	transcript hash.Hash
-	buf        []byte
+	_           noCopy
+	transcript  hash.Hash
+	metadataBuf []byte
 }
 
 // NewProtocol creates a new Protocol with the given domain separation string.
@@ -48,23 +50,25 @@ type Protocol struct {
 // data like timestamps or user IDs. A good format is "application-name.protocol-name".
 func NewProtocol(domain string) *Protocol {
 	// Initialize an empty transcript.
-	transcript := sha256.New()
+	p := &Protocol{ //nolint:exhaustruct // noCopy can't be initialized, metadataBuf doesn't need to be
+		transcript: sha256.New(),
+	}
 
 	// Append the operation metadata to the transcript.
-	metadata := make([]byte, 1, max(1+tuplehash.MaxSize+len(domain), initialBufSize))
+	metadata := p.metadataBuffer(max(1+tuplehash.MaxSize+len(domain), initialBufSize))
 	metadata[0] = opInit
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(domain))*bitsPerByte)
 	metadata = append(metadata, domain...)
-	transcript.Write(metadata)
+	p.transcript.Write(metadata)
 	clear(metadata)
 
-	return &Protocol{transcript: transcript, buf: metadata} //nolint:exhaustruct // noCopy should not be initialized
+	return p
 }
 
 // Mix ratchets the protocol's state using the given label and input.
 func (p *Protocol) Mix(label string, input []byte) {
 	// Append the operation metadata and data to the transcript.
-	metadata := p.reuseBuf(1 + tuplehash.MaxSize + len(label) + tuplehash.MaxSize)
+	metadata := p.metadataBuffer(1 + tuplehash.MaxSize + len(label) + tuplehash.MaxSize)
 	metadata[0] = opMix
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
@@ -87,7 +91,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	}
 
 	// Append the operation metadata to the transcript.
-	metadata := p.reuseBuf(1 + tuplehash.MaxSize + len(label) + tuplehash.MaxSize)
+	metadata := p.metadataBuffer(1 + tuplehash.MaxSize + len(label) + tuplehash.MaxSize)
 	metadata[0] = opDerive
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
@@ -123,7 +127,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	ret, ciphertext := sliceForAppend(dst, len(plaintext))
 
 	// Append the operation metadata to the transcript.
-	metadata := p.reuseBuf(1 + tuplehash.MaxSize + len(label) + tuplehash.MaxSize)
+	metadata := p.metadataBuffer(1 + tuplehash.MaxSize + len(label) + tuplehash.MaxSize)
 	metadata[0] = opCrypt
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
@@ -164,7 +168,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	ret, plaintext := sliceForAppend(dst, len(ciphertext))
 
 	// Append the operation metadata to the transcript.
-	metadata := p.reuseBuf(1 + tuplehash.MaxSize + len(label) + tuplehash.MaxSize)
+	metadata := p.metadataBuffer(1 + tuplehash.MaxSize + len(label) + tuplehash.MaxSize)
 	metadata[0] = opCrypt
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
@@ -204,7 +208,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	ciphertext, tag := ciphertext[:len(plaintext)], ciphertext[len(plaintext):]
 
 	// Append the operation metadata to the transcript.
-	metadata := p.reuseBuf(1 + tuplehash.MaxSize + len(label) + tuplehash.MaxSize)
+	metadata := p.metadataBuffer(1 + tuplehash.MaxSize + len(label) + tuplehash.MaxSize)
 	metadata[0] = opAuthCrypt
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
@@ -247,7 +251,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	ret, plaintext := sliceForAppend(dst, len(ciphertext))
 
 	// Append the operation metadata to the transcript.
-	metadata := p.reuseBuf(1 + tuplehash.MaxSize + len(label) + tuplehash.MaxSize)
+	metadata := p.metadataBuffer(1 + tuplehash.MaxSize + len(label) + tuplehash.MaxSize)
 	metadata[0] = opAuthCrypt
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
@@ -290,7 +294,7 @@ func (p *Protocol) Clone() *Protocol {
 		panic(err)
 	}
 
-	return &Protocol{transcript: transcript, buf: make([]byte, initialBufSize)} //nolint:exhaustruct // noCopy should not be initialized
+	return &Protocol{transcript: transcript, metadataBuf: make([]byte, initialBufSize)} //nolint:exhaustruct // noCopy should not be initialized
 }
 
 func (p *Protocol) AppendBinary(b []byte) ([]byte, error) {
@@ -306,7 +310,7 @@ func (p *Protocol) UnmarshalBinary(data []byte) error {
 	}
 
 	p.transcript = sha256.New()
-	p.buf = make([]byte, initialBufSize)
+	p.metadataBuf = make([]byte, initialBufSize)
 	return p.transcript.(encoding.BinaryUnmarshaler).UnmarshalBinary(data) //nolint:errcheck // cannot panic
 }
 
@@ -327,7 +331,7 @@ func (p *Protocol) ratchet(dst []byte) {
 	p.transcript.Reset()
 
 	// Append the operation metadata and data to the transcript.
-	metadata := p.reuseBuf(1 + tuplehash.MaxSize)
+	metadata := p.metadataBuffer(1 + tuplehash.MaxSize)
 	metadata[0] = opRatchet
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(rak))*bitsPerByte)
 	p.transcript.Write(metadata)
@@ -351,7 +355,7 @@ func (p *Protocol) expand(label string, dst []byte) []byte {
 // bytes of derived output.
 func (p *Protocol) expandInPlace(transcript hash.Hash, label string, dst []byte) []byte {
 	// Append the operation metadata and data to the transcript copy.
-	metadata := p.reuseBuf(1 + tuplehash.MaxSize + len(label) + tuplehash.MaxSize)
+	metadata := p.metadataBuffer(1 + tuplehash.MaxSize + len(label) + tuplehash.MaxSize)
 	metadata[0] = opExpand
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(label))*bitsPerByte)
 	metadata = append(metadata, label...)
@@ -363,12 +367,13 @@ func (p *Protocol) expandInPlace(transcript hash.Hash, label string, dst []byte)
 	return transcript.Sum(dst)[:maxExpandSize]
 }
 
-func (p *Protocol) reuseBuf(n int) []byte {
-	if cap(p.buf) < n {
-		p.buf = make([]byte, n)
+func (p *Protocol) metadataBuffer(n int) []byte {
+	if len(p.metadataBuf) < n {
+		// If the metadata buffer is undersized, round up to the nearest power of two for the new one.
+		p.metadataBuf = make([]byte, 1<<(strconv.IntSize-bits.LeadingZeros(uint(n-1)))) //nolint:gosec // n is always >= initialBufSize
 	}
 
-	return p.buf[:1]
+	return p.metadataBuf[:1]
 }
 
 var (
@@ -401,10 +406,10 @@ const (
 )
 
 const (
-	maxExpandSize  = 16  // The length, in bytes, of the maximum data expandable from a transcript.
-	bitsPerByte    = 8   // The number of bits in one byte.
-	initialBufSize = 128 // The length, in bytes, of the initial metadata buffer.
-	expandBufSize  = 32  // The length, in bytes, required of an expand buffer.
+	maxExpandSize  = 16 // The length, in bytes, of the maximum data expandable from a transcript.
+	bitsPerByte    = 8  // The number of bits in one byte.
+	initialBufSize = 64 // The length, in bytes, of the initial metadata buffer.
+	expandBufSize  = 32 // The length, in bytes, required of an expand buffer.
 )
 
 // noCopy is a fake lock used by -copylocks checker from `go vet`.

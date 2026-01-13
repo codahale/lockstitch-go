@@ -3,6 +3,7 @@ package lockstitch_test
 import (
 	"bytes"
 	"encoding/hex"
+	"strings"
 	"testing"
 
 	"github.com/codahale/lockstitch-go"
@@ -132,6 +133,15 @@ func TestKnownAnswers(t *testing.T) {
 
 	if got, want := hex.EncodeToString(protocol.Derive("sixth", nil, 8)), "04d8a4b236e5e7db"; got != want {
 		t.Errorf("Derive('sixth') = %v, want = %v", got, want)
+	}
+}
+
+func TestNewProtocol_HugeMetadata(t *testing.T) {
+	t.Parallel()
+
+	p := lockstitch.NewProtocol(strings.Repeat("doink", 200))
+	if got, want := hex.EncodeToString(p.Derive("one", nil, 8)), "6d44345e12066abe"; got != want {
+		t.Errorf("Derive('one') = %v, want = %v", got, want)
 	}
 }
 
