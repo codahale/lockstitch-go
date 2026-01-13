@@ -10,6 +10,54 @@ import (
 	"github.com/codahale/lockstitch-go/internal/aes"
 )
 
+func TestGMAC(t *testing.T) {
+	key := make([]byte, 16)
+	nonce := make([]byte, 12)
+	data := []byte("hello world")
+
+	tag := aes.GMAC(key, nil, data)
+
+	block, err := stdlibaes.NewCipher(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := gcm.Open(nil, nonce, tag, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if want := []byte{}; !bytes.Equal(got, want) {
+		t.Errorf("GCM(GMAC()) = %x, want %x", tag, got)
+	}
+}
+
+func TestCTR_InvalidKey(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("CTR(15 byte key) should have failed")
+		}
+	}()
+
+	key := make([]byte, 15) // Invalid key size
+	aes.CTR(key, make([]byte, 16), nil, nil)
+}
+
+func TestGMAC_InvalidKey(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("GMAC(15 byte key) should have failed")
+		}
+	}()
+
+	key := make([]byte, 15) // Invalid key size
+	aes.GMAC(key, nil, nil)
+}
+
 func FuzzCTR(f *testing.F) {
 	drbg := sha3.NewSHAKE128()
 	_, _ = drbg.Write([]byte("lockstitch ctr implementation"))
