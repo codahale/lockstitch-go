@@ -52,6 +52,7 @@ func NewProtocol(domain string) *Protocol {
 	// Initialize an empty transcript.
 	p := &Protocol{ //nolint:exhaustruct // noCopy can't be initialized, buf doesn't need to be
 		transcript: sha256.New(),
+		clone:      sha256.New(),
 	}
 
 	// Append the operation metadata to the transcript.
@@ -296,6 +297,7 @@ func (p *Protocol) Clone() *Protocol {
 
 	return &Protocol{ //nolint:exhaustruct // noCopy cannot be initialized
 		transcript: transcript,
+		clone:      sha256.New(),
 		buf:        make([]byte, len(p.buf)),
 	}
 }
@@ -313,6 +315,7 @@ func (p *Protocol) UnmarshalBinary(data []byte) error {
 	}
 
 	p.transcript = sha256.New()
+	p.clone = sha256.New()
 	p.buf = make([]byte, initialBufSize)
 	return p.transcript.(encoding.BinaryUnmarshaler).UnmarshalBinary(data) //nolint:errcheck // cannot panic
 }
@@ -361,10 +364,6 @@ func (p *Protocol) expand(transcript hash.Hash, label string, dst []byte) []byte
 // cloneTranscript returns a clone of the protocol's transcript.
 func (p *Protocol) cloneTranscript() hash.Hash {
 	// This uses a pre-allocated sha256 hash and state buffer because that's about 3% faster than calling Clone.
-
-	if p.clone == nil {
-		p.clone = sha256.New()
-	}
 
 	state, err := p.transcript.(encoding.BinaryAppender).AppendBinary(p.reuseBuffer(108)[:0]) //nolint:errcheck // cannot panic
 	if err != nil {
