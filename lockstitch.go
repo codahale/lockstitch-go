@@ -101,8 +101,8 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	clear(metadata)
 
 	// Expand a PRF key.
-	var keys [expandBufSize]byte
-	prfKey := p.expand(p.cloneTranscript(), "prf key", keys[:0])
+	expandBuf := make([]byte, expandBufSize)
+	prfKey := p.expand(p.cloneTranscript(), "prf key", expandBuf[:0])
 
 	// Expand n bytes of AES-128-CTR keystream for PRF output.
 	ret, prf := sliceForAppend(dst, n)
@@ -110,7 +110,7 @@ func (p *Protocol) Derive(label string, dst []byte, n int) []byte {
 	aes.CTR(prfKey, zeroIV[:], prf, prf)
 
 	// Ratchet the transcript.
-	p.ratchet(prfKey[:0])
+	p.ratchet(expandBuf[:0])
 
 	return ret
 }
@@ -137,9 +137,9 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	clear(metadata)
 
 	// Expand a data encryption key and a data authentication key from the transcript.
-	var keys [expandBufSize * 2]byte
-	dek := p.expand(p.cloneTranscript(), "data encryption key", keys[:0])
-	dak := p.expand(p.cloneTranscript(), "data authentication key", keys[expandBufSize:expandBufSize])
+	expandBuf := make([]byte, expandBufSize*2)
+	dek := p.expand(p.cloneTranscript(), "data encryption key", expandBuf[:0])
+	dak := p.expand(p.cloneTranscript(), "data authentication key", expandBuf[expandBufSize:expandBufSize])
 
 	// Calculate an AES-128-GMAC authenticator of the plaintext.
 	auth := aes.GMAC(dak, dak[:0], plaintext)
@@ -151,7 +151,7 @@ func (p *Protocol) Encrypt(label string, dst, plaintext []byte) []byte {
 	aes.CTR(dek, zeroIV[:], ciphertext, plaintext)
 
 	// Ratchet the transcript.
-	p.ratchet(dek[:0])
+	p.ratchet(expandBuf[:0])
 
 	return ret
 }
@@ -178,9 +178,9 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	clear(metadata)
 
 	// Expand a data encryption key, an IV, and a data authentication key from the transcript.
-	var keys [expandBufSize * 2]byte
-	dek := p.expand(p.cloneTranscript(), "data encryption key", keys[:0])
-	dak := p.expand(p.cloneTranscript(), "data authentication key", keys[expandBufSize:expandBufSize])
+	expandBuf := make([]byte, expandBufSize*2)
+	dek := p.expand(p.cloneTranscript(), "data encryption key", expandBuf[:0])
+	dak := p.expand(p.cloneTranscript(), "data authentication key", expandBuf[expandBufSize:expandBufSize])
 
 	// Decrypt the ciphertext using AES-128-CTR.
 	aes.CTR(dek, zeroIV[:], plaintext, ciphertext)
@@ -192,7 +192,7 @@ func (p *Protocol) Decrypt(label string, dst, ciphertext []byte) []byte {
 	p.transcript.Write(auth)
 
 	// Ratchet the transcript.
-	p.ratchet(dek[:0])
+	p.ratchet(expandBuf[:0])
 
 	return ret
 }
@@ -218,9 +218,9 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	clear(metadata)
 
 	// Expand a data encryption key and a data authentication key from the transcript.
-	var keys [expandBufSize * 2]byte
-	dek := p.expand(p.cloneTranscript(), "data encryption key", keys[:0])
-	dak := p.expand(p.cloneTranscript(), "data authentication key", keys[expandBufSize:expandBufSize])
+	expandBuf := make([]byte, expandBufSize*2)
+	dek := p.expand(p.cloneTranscript(), "data encryption key", expandBuf[:0])
+	dak := p.expand(p.cloneTranscript(), "data authentication key", expandBuf[expandBufSize:expandBufSize])
 
 	// Calculate an AES-128-GMAC authenticator of the plaintext.
 	auth := aes.GMAC(dak, dak[:0], plaintext)
@@ -235,7 +235,7 @@ func (p *Protocol) Seal(label string, dst, plaintext []byte) []byte {
 	aes.CTR(dek, tag, ciphertext, plaintext)
 
 	// Ratchet the transcript.
-	p.ratchet(dek[:0])
+	p.ratchet(expandBuf[:0])
 
 	return ret
 }
@@ -261,9 +261,9 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	clear(metadata)
 
 	// Expand a data encryption key and a data authentication key from the transcript.
-	var keys [expandBufSize * 2]byte
-	dek := p.expand(p.cloneTranscript(), "data encryption key", keys[:0])
-	dak := p.expand(p.cloneTranscript(), "data authentication key", keys[expandBufSize:expandBufSize])
+	expandBuf := make([]byte, expandBufSize*2)
+	dek := p.expand(p.cloneTranscript(), "data encryption key", expandBuf[:0])
+	dak := p.expand(p.cloneTranscript(), "data authentication key", expandBuf[expandBufSize:expandBufSize])
 
 	// Decrypt the ciphertext using AES-128-CTR with the tag as the IV.
 	aes.CTR(dek, tag, plaintext, ciphertext)
@@ -278,7 +278,7 @@ func (p *Protocol) Open(label string, dst, ciphertext []byte) ([]byte, error) {
 	tagP := p.expand(p.cloneTranscript(), "authentication tag", auth[:0])
 
 	// Ratchet the transcript.
-	p.ratchet(dek[:0])
+	p.ratchet(expandBuf[:0])
 
 	// Compare the tag and the counterfactual tag in constant time.
 	if subtle.ConstantTimeCompare(tag, tagP) == 0 {
@@ -329,9 +329,9 @@ func (p *Protocol) MarshalBinary() (data []byte, err error) {
 
 // ratchet replaces the protocol's transcript with a ratchet operation code and a ratchet key derived from the previous
 // protocol transcript.
-func (p *Protocol) ratchet(dst []byte) {
+func (p *Protocol) ratchet(expandBuf []byte) {
 	// Expand a ratchet key in place, since the transcript is immediately reset following this.
-	rak := p.expand(p.transcript, "ratchet key", dst)
+	rak := p.expand(p.transcript, "ratchet key", expandBuf)
 
 	// Clear the transcript.
 	p.transcript.Reset()
@@ -347,7 +347,7 @@ func (p *Protocol) ratchet(dst []byte) {
 
 // expand appends an expand operation code, the label length, the label, and the requested output length, and returns 16
 // bytes of derived output.
-func (p *Protocol) expand(transcript hash.Hash, label string, dst []byte) []byte {
+func (p *Protocol) expand(transcript hash.Hash, label string, buf []byte) []byte {
 	// Append the operation metadata and data to the transcript copy.
 	metadata := p.reuseBuffer(1, 1+tuplehash.MaxSize+len(label)+tuplehash.MaxSize)
 	metadata[0] = opExpand
@@ -358,7 +358,7 @@ func (p *Protocol) expand(transcript hash.Hash, label string, dst []byte) []byte
 	clear(metadata)
 
 	// Generate 16 bytes of output.
-	return transcript.Sum(dst)[:maxExpandSize]
+	return transcript.Sum(buf)[:maxExpandSize]
 }
 
 // cloneTranscript returns a clone of the protocol's transcript.
