@@ -74,6 +74,7 @@ func (p *Protocol) Mix(label string, input []byte) {
 	metadata = append(metadata, label...)
 	metadata = tuplehash.AppendLeftEncode(metadata, uint64(len(input))*bitsPerByte)
 	p.transcript.Write(metadata)
+	clear(metadata)
 	p.transcript.Write(input)
 }
 
